@@ -1,0 +1,10 @@
+{
+    "preset": "laravel",
+    "rules": {
+        "yoda_style": {
+            "equal": true,
+            "identical": true,
+            "less_and_greater": false
+        }
+    }
+}

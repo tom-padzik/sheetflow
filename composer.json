@@ -1,0 +1,47 @@
+{
+    "name": "tpadzik/sheetflow",
+    "description": "Spreadsheet import wizard for Laravel. Upload, map columns, validate, and import CSV, XLSX, and ODS.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "illuminate/bus": "^13.0",
+        "illuminate/database": "^13.0",
+        "illuminate/http": "^13.0",
+        "illuminate/support": "^13.0",
+        "illuminate/validation": "^13.0",
+        "openspout/openspout": "^4.28"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^11.0",
+        "pestphp/pest": "^4.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Tpadzik\\Sheetflow\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tpadzik\\Sheetflow\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Tpadzik\\Sheetflow\\SheetflowServiceProvider"
+            ]
+        }
+    },
+    "support": {
+        "source": "https://github.com/tom-padzik/sheetflow"
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        },
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

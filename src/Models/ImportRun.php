@@ -1,0 +1,81 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tpadzik\Sheetflow\Models;
+
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Tpadzik\Sheetflow\Enums\RunStatus;
+
+class ImportRun extends Model
+{
+    use HasUuids;
+
+    protected $table = 'sheetflow_runs';
+
+    /**
+     * @var list<string>
+     */
+    protected $fillable = [
+        'definition_key',
+        'status',
+        'disk',
+        'path',
+        'original_filename',
+        'format',
+        'delimiter',
+        'sheet',
+        'header_signature',
+        'headers',
+        'sheet_names',
+        'preview_rows',
+        'column_map',
+        'total_rows',
+        'processed_rows',
+        'valid_rows',
+        'failed_rows',
+        'imported_rows',
+        'user_id',
+        'batch_id',
+        'staged_at',
+        'validated_at',
+        'completed_at',
+        'cancelled_at',
+    ];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'status' => RunStatus::class,
+            'headers' => 'array',
+            'sheet_names' => 'array',
+            'preview_rows' => 'array',
+            'column_map' => 'array',
+            'staged_at' => 'datetime',
+            'validated_at' => 'datetime',
+            'completed_at' => 'datetime',
+            'cancelled_at' => 'datetime',
+        ];
+    }
+
+    /**
+     * @return HasMany<ImportRow, $this>
+     */
+    public function rows(): HasMany
+    {
+        return $this->hasMany(ImportRow::class, 'run_id');
+    }
+
+    /**
+     * @return HasMany<ImportFailure, $this>
+     */
+    public function failures(): HasMany
+    {
+        return $this->hasMany(ImportFailure::class, 'run_id');
+    }
+}

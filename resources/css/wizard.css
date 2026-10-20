@@ -1,0 +1,126 @@
+:root {
+    color-scheme: light;
+    font-family: "Segoe UI", sans-serif;
+    color: #1c1917;
+    background: #f6f3ee;
+}
+
+body {
+    margin: 0;
+}
+
+.sheetflow {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 20px 64px;
+}
+
+.sheetflow h1 {
+    margin: 0 0 8px;
+    font-size: 28px;
+}
+
+.sheetflow p.lead {
+    margin: 0 0 24px;
+    color: #57534e;
+}
+
+.sheetflow section {
+    background: #fff;
+    border: 1px solid #e7e5e4;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+}
+
+.sheetflow h2 {
+    margin: 0 0 12px;
+    font-size: 18px;
+}
+
+.sheetflow label {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 14px;
+}
+
+.sheetflow input[type="text"],
+.sheetflow input[type="file"],
+.sheetflow select {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 8px 10px;
+    border: 1px solid #d6d3d1;
+    border-radius: 8px;
+    background: #fff;
+    box-sizing: border-box;
+}
+
+.sheetflow button {
+    border: 0;
+    border-radius: 8px;
+    padding: 8px 14px;
+    background: #1c1917;
+    color: #fff;
+    cursor: pointer;
+}
+
+.sheetflow button.secondary {
+    background: #fff;
+    color: #1c1917;
+    border: 1px solid #d6d3d1;
+}
+
+.sheetflow button.danger {
+    background: #9f1239;
+}
+
+.sheetflow button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.sheetflow .row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.sheetflow table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.sheetflow th,
+.sheetflow td {
+    border-bottom: 1px solid #e7e5e4;
+    text-align: left;
+    padding: 8px 6px;
+    vertical-align: top;
+}
+
+.sheetflow .progress {
+    height: 12px;
+    background: #e7e5e4;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.sheetflow .progress span {
+    display: block;
+    height: 100%;
+    background: #0f766e;
+}
+
+.sheetflow .error {
+    color: #9f1239;
+    margin: 8px 0 0;
+}
+
+.sheetflow .meta {
+    color: #57534e;
+    font-size: 14px;
+}
