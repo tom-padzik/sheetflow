@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use OpenSpout\Common\Exception\OpenSpoutException;
 use Throwable;
 use Tpadzik\Sheetflow\Contracts\SpreadsheetReaderInterface;
 use Tpadzik\Sheetflow\Enums\RowStatus;
@@ -54,7 +55,7 @@ class ImportPipeline
 
         if (! is_string($path)) {
             throw ValidationException::withMessages([
-                'file' => 'The file could not be stored.',
+                'file' => __('sheetflow::messages.errors.file_not_stored'),
             ]);
         }
 
@@ -67,11 +68,15 @@ class ImportPipeline
                 delimiter: $delimiter,
                 sheet: $sheet,
             );
-        } catch (InvalidSpreadsheetException $exception) {
+        } catch (InvalidSpreadsheetException|OpenSpoutException $exception) {
             Storage::disk($disk)->delete($path);
 
             throw ValidationException::withMessages([
-                'file' => $exception->getMessage(),
+                'file' => $this->readError(
+                    filename: $this->sourceFilename($file->getClientOriginalName()),
+                    exception: $exception,
+                    storedPath: $absolutePath,
+                ),
             ]);
         }
 
@@ -192,9 +197,13 @@ class ImportPipeline
                 delimiter: $run->delimiter,
                 sheet: $sheet,
             );
-        } catch (InvalidSpreadsheetException $exception) {
+        } catch (InvalidSpreadsheetException|OpenSpoutException $exception) {
             throw ValidationException::withMessages([
-                'sheet' => $exception->getMessage(),
+                'sheet' => $this->readError(
+                    filename: $this->sourceFilename($run->original_filename),
+                    exception: $exception,
+                    storedPath: $absolutePath,
+                ),
             ]);
         }
 
@@ -700,7 +709,7 @@ class ImportPipeline
 
         foreach ($columnMap as $fieldName => $header) {
             if (! is_string($fieldName) || ! array_key_exists($fieldName, $known)) {
-                $errors['column_map'] = 'The column map contains an unknown field.';
+                $errors['column_map'] = __('sheetflow::messages.errors.unknown_field');
 
                 continue;
             }
@@ -712,7 +721,9 @@ class ImportPipeline
             }
 
             if (! in_array($header, $headers, true)) {
-                $errors[$fieldName] = sprintf('The column "%s" is not in the file.', $header);
+                $errors[$fieldName] = __('sheetflow::messages.errors.missing_column', [
+                    'column' => $header,
+                ]);
 
                 continue;
             }
@@ -796,6 +807,35 @@ class ImportPipeline
         $run->forceFill(['batch_id' => null])->save();
     }
 
+    private function sourceFilename(string $filename): string
+    {
+        $base = basename(str_replace('\\', '/', $filename));
+
+        if ('' === $base || '.' === $base || '..' === $base) {
+            return 'file';
+        }
+
+        return $base;
+    }
+
+    private function readError(string $filename, Throwable $exception, string $storedPath): string
+    {
+        $reason = $exception->getMessage();
+
+        if ('' !== $storedPath) {
+            $reason = str_replace($storedPath, $filename, $reason);
+        }
+
+        if (1 === preg_match('/for reading: (.+)\.$/', $reason, $matches)) {
+            $reason = $matches[1];
+        }
+
+        return __('sheetflow::messages.errors.unreadable_file', [
+            'filename' => $filename,
+            'reason' => $reason,
+        ]);
+    }
+
     private function assertStatus(ImportRun $run, RunStatus ...$allowed): void
     {
         foreach ($allowed as $status) {
@@ -804,6 +844,8 @@ class ImportPipeline
             }
         }
 
-        abort(409, sprintf('Import cannot do that while it is %s.', $run->status->value));
+        abort(409, __('sheetflow::messages.errors.invalid_status', [
+            'status' => __('sheetflow::messages.statuses.'.$run->status->value),
+        ]));
     }
 }

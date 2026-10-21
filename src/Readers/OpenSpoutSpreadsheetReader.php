@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tpadzik\Sheetflow\Readers;
 
-use DateTimeInterface;
 use OpenSpout\Reader\CSV\Options as CsvOptions;
 use OpenSpout\Reader\CSV\Reader as CsvReader;
 use OpenSpout\Reader\ODS\Reader as OdsReader;
@@ -13,10 +12,15 @@ use OpenSpout\Reader\SheetInterface;
 use OpenSpout\Reader\XLSX\Reader as XlsxReader;
 use Tpadzik\Sheetflow\Contracts\SpreadsheetReaderInterface;
 use Tpadzik\Sheetflow\Exceptions\InvalidSpreadsheetException;
+use Tpadzik\Sheetflow\Support\SheetCells;
 use Tpadzik\Sheetflow\Support\SpreadsheetPreview;
 
 class OpenSpoutSpreadsheetReader implements SpreadsheetReaderInterface
 {
+    public function __construct(
+        private readonly SheetCells $cells,
+    ) {}
+
     public function inspect(
         string $path,
         string $format,
@@ -67,16 +71,16 @@ class OpenSpoutSpreadsheetReader implements SpreadsheetReaderInterface
                 $cells = $row->toArray();
 
                 if (1 === $spreadsheetRow) {
-                    $headers = $this->headersFrom($cells);
+                    $headers = $this->cells->headers($cells);
 
                     continue;
                 }
 
-                if (null === $headers || $this->cellsAreEmpty($cells)) {
+                if (null === $headers || $this->cells->areEmpty($cells)) {
                     continue;
                 }
 
-                yield $spreadsheetRow => $this->associate(
+                yield $spreadsheetRow => $this->cells->associate(
                     headers: $headers,
                     cells: $cells,
                 );
@@ -116,11 +120,11 @@ class OpenSpoutSpreadsheetReader implements SpreadsheetReaderInterface
         }
 
         if (null === $resolvedSheet) {
-            throw new InvalidSpreadsheetException('The selected sheet was not found in the file.');
+            throw new InvalidSpreadsheetException(__('sheetflow::messages.errors.sheet_missing'));
         }
 
         if ([] === $headers) {
-            throw new InvalidSpreadsheetException('The spreadsheet has no header row.');
+            throw new InvalidSpreadsheetException(__('sheetflow::messages.errors.no_header'));
         }
 
         return new SpreadsheetPreview(
@@ -146,16 +150,16 @@ class OpenSpoutSpreadsheetReader implements SpreadsheetReaderInterface
             $cells = $row->toArray();
 
             if (1 === $spreadsheetRow) {
-                $headers = $this->headersFrom($cells);
+                $headers = $this->cells->headers($cells);
 
                 continue;
             }
 
-            if ($this->cellsAreEmpty($cells)) {
+            if ($this->cells->areEmpty($cells)) {
                 continue;
             }
 
-            $previewRows[] = $this->associate(headers: $headers, cells: $cells);
+            $previewRows[] = $this->cells->associate(headers: $headers, cells: $cells);
 
             if (count($previewRows) >= $previewLimit) {
                 break;
@@ -163,100 +167,6 @@ class OpenSpoutSpreadsheetReader implements SpreadsheetReaderInterface
         }
 
         return [$headers, $previewRows];
-    }
-
-    /**
-     * @param  list<mixed>  $cells
-     * @return list<string>
-     */
-    private function headersFrom(array $cells): array
-    {
-        $headers = [];
-
-        foreach ($cells as $cell) {
-            $header = $this->stringify($cell);
-
-            if (null === $header) {
-                if ($this->cellsAreEmpty(array_slice($cells, count($headers)))) {
-                    break;
-                }
-
-                throw new InvalidSpreadsheetException('The header row has an empty column.');
-            }
-
-            $headers[] = $header;
-        }
-
-        if ([] === $headers) {
-            throw new InvalidSpreadsheetException('The spreadsheet has no header row.');
-        }
-
-        $counts = array_count_values($headers);
-
-        foreach ($counts as $header => $count) {
-            if ($count > 1) {
-                throw new InvalidSpreadsheetException(sprintf('The header row contains a duplicate column "%s".', $header));
-            }
-        }
-
-        return $headers;
-    }
-
-    /**
-     * @param  list<string>  $headers
-     * @param  list<mixed>  $cells
-     * @return array<string, string|null>
-     */
-    private function associate(array $headers, array $cells): array
-    {
-        $values = [];
-
-        foreach ($headers as $index => $header) {
-            $values[$header] = $this->stringify($cells[$index] ?? null);
-        }
-
-        return $values;
-    }
-
-    /**
-     * @param  list<mixed>  $cells
-     */
-    private function cellsAreEmpty(array $cells): bool
-    {
-        foreach ($cells as $cell) {
-            if (null !== $this->stringify($cell)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private function stringify(mixed $value): ?string
-    {
-        if ($value instanceof DateTimeInterface) {
-            return $value->format('Y-m-d H:i:s');
-        }
-
-        if (is_bool($value)) {
-            return $value ? '1' : '0';
-        }
-
-        if (null === $value) {
-            return null;
-        }
-
-        if (is_int($value) || is_float($value)) {
-            $string = (string) $value;
-        } else {
-            $string = trim((string) $value);
-        }
-
-        if ('' === $string) {
-            return null;
-        }
-
-        return $string;
     }
 
     private function sheetIsSelected(string $name, ?string $wanted, bool $isFirst): bool
@@ -280,7 +190,7 @@ class OpenSpoutSpreadsheetReader implements SpreadsheetReaderInterface
             $isFirst = false;
         }
 
-        throw new InvalidSpreadsheetException('The selected sheet was not found in the file.');
+        throw new InvalidSpreadsheetException(__('sheetflow::messages.errors.sheet_missing'));
     }
 
     private function resolveDelimiter(string $path, string $format, ?string $delimiter): ?string
@@ -341,6 +251,8 @@ class OpenSpoutSpreadsheetReader implements SpreadsheetReaderInterface
             return new OdsReader;
         }
 
-        throw new InvalidSpreadsheetException(sprintf('The format [%s] is not supported.', $format));
+        throw new InvalidSpreadsheetException(__('sheetflow::messages.errors.unsupported_format', [
+            'format' => $format,
+        ]));
     }
 }

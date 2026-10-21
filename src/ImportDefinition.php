@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tpadzik\Sheetflow;
 
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class ImportDefinition
@@ -17,6 +18,14 @@ abstract class ImportDefinition
      * @return list<Field>
      */
     abstract public function fields(): array;
+
+    /**
+     * Return true to allow this import, false to refuse it, or null when this definition has no extra rule.
+     */
+    public function authorize(?Authenticatable $user): ?bool
+    {
+        return null;
+    }
 
     final public function handle(MappedRow $row): void
     {

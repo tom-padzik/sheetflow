@@ -6,22 +6,24 @@ namespace Tpadzik\Sheetflow\Http\Controllers;
 
 use Illuminate\Routing\Controller;
 use Tpadzik\Sheetflow\Models\ImportRun;
+use Tpadzik\Sheetflow\Support\DefinitionRegistry;
+use Tpadzik\Sheetflow\Support\ImportGate;
 
 abstract class SheetflowController extends Controller
 {
+    protected function authorizeDefinition(string $definition): void
+    {
+        app(ImportGate::class)->decide(
+            definitionKey: $definition,
+            definition: app(DefinitionRegistry::class)->resolve($definition),
+        );
+    }
+
     protected function authorizeRun(ImportRun $run): void
     {
-        $userId = auth()->id();
+        $this->authorizeDefinition($run->definition_key);
 
-        if (null === $userId) {
-            if (null !== $run->user_id) {
-                abort(403);
-            }
-
-            return;
-        }
-
-        if ((string) $run->user_id !== (string) $userId) {
+        if (! $run->ownedBy(auth()->user())) {
             abort(403);
         }
     }

@@ -1,6 +1,6 @@
 {
     "name": "tpadzik/sheetflow",
-    "description": "Spreadsheet import wizard for Laravel. Upload, map columns, validate, and import CSV, XLSX, and ODS.",
+    "description": "Spreadsheet import wizard for Laravel. Upload, map columns, validate, and import CSV, XLS, XLSX, and ODS.",
     "type": "library",
     "license": "MIT",
     "require": {
@@ -10,7 +10,8 @@
         "illuminate/http": "^13.0",
         "illuminate/support": "^13.0",
         "illuminate/validation": "^13.0",
-        "openspout/openspout": "^4.28"
+        "openspout/openspout": "^4.28",
+        "phpoffice/phpspreadsheet": "^2.0 || ^3.0 || ^5.0"
     },
     "require-dev": {
         "orchestra/testbench": "^11.0",

@@ -21,7 +21,7 @@ class UploadImportRequest extends FormRequest
         $maxKilobytes = (int) config('sheetflow.max_kilobytes', 20480);
 
         return [
-            'file' => ['required', 'file', 'extensions:csv,txt,xlsx,ods', 'max:'.$maxKilobytes],
+            'file' => ['required', 'file', 'extensions:csv,txt,xls,xlsx,ods', 'max:'.$maxKilobytes],
             'sheet' => ['nullable', 'string', 'max:255'],
             'delimiter' => ['nullable', 'string', 'max:1'],
         ];

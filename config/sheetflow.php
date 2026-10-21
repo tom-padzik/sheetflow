@@ -10,13 +10,43 @@ return [
     |--------------------------------------------------------------------------
     |
     | JSON routes live under "{prefix}/api". The Blade wizard lives at
-    | "{prefix}/{definition}".
+    | "{prefix}/{definition}" when register_wizard is true.
+    |
+    | Set register_routes to false and call Sheetflow::routes() to mount that
+    | group yourself, more than once if needed. wizards maps your own URIs to
+    | definition keys. A value may be the key, or an array with definition,
+    | name, and middleware.
     |
     */
 
     'prefix' => env('SHEETFLOW_PREFIX', 'sheetflow'),
 
     'middleware' => ['web', 'auth'],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Manual testing
+    |--------------------------------------------------------------------------
+    |
+    | SHEETFLOW_ALLOW_ALL lets every visitor open every import. The package
+    | ignores this switch when the application environment is production.
+    |
+    */
+
+    'allow_all' => env('SHEETFLOW_ALLOW_ALL', false),
+
+    'register_routes' => true,
+
+    'register_wizard' => true,
+
+    'wizards' => [
+        // 'imports/products' => 'products',
+        // 'imports/customers' => [
+        //     'definition' => 'customers',
+        //     'name' => 'imports.customers',
+        //     'middleware' => ['web', 'auth'],
+        // ],
+    ],
 
     /*
     |--------------------------------------------------------------------------

@@ -8,6 +8,7 @@
 
     const definition = root.dataset.definition;
     const api = root.dataset.api;
+    const copy = parseMessages(root.dataset.messages);
     const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
     let run = null;
     let timer = null;
@@ -17,6 +18,38 @@
         'X-CSRF-TOKEN': token,
         'X-Requested-With': 'XMLHttpRequest',
     };
+
+    function parseMessages(raw) {
+        try {
+            const parsed = JSON.parse(raw || '{}');
+
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    function t(path) {
+        const value = path.split('.').reduce((carry, key) => {
+            if (carry && typeof carry === 'object' && Object.prototype.hasOwnProperty.call(carry, key)) {
+                return carry[key];
+            }
+
+            return undefined;
+        }, copy);
+
+        return typeof value === 'string' ? value : path;
+    }
+
+    function fill(path, replacements) {
+        let value = t(path);
+
+        Object.entries(replacements).forEach(([key, replacement]) => {
+            value = value.replaceAll(':' + key, String(replacement));
+        });
+
+        return value;
+    }
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -31,7 +64,7 @@
         const payload = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            const message = firstError(payload) ?? 'The request failed.';
+            const message = firstError(payload) ?? t('request_failed');
             throw new Error(message);
         }
 
@@ -79,10 +112,10 @@
 
     function uploadSection() {
         return [
-            '<section><h2>1. Upload</h2>',
+            `<section><h2>${escapeHtml(t('upload_heading'))}</h2>`,
             '<form id="sheetflow-upload">',
-            '<label>File<input type="file" name="file" accept=".csv,.txt,.xlsx,.ods" required></label>',
-            '<button type="submit">Upload</button>',
+            `<label>${escapeHtml(t('file'))}<input type="file" name="file" accept=".csv,.txt,.xls,.xlsx,.ods" required></label>`,
+            `<button type="submit">${escapeHtml(t('upload'))}</button>`,
             '</form></section>',
         ].join('');
     }
@@ -91,11 +124,11 @@
         const busy = ['staging', 'validating', 'importing'].includes(run.status);
 
         return [
-            '<section><h2>Progress</h2>',
-            `<p class="meta">${escapeHtml(run.filename)} · ${escapeHtml(run.status)} · ${run.processed_rows} / ${run.total_rows}</p>`,
+            `<section><h2>${escapeHtml(t('progress'))}</h2>`,
+            `<p class="meta">${escapeHtml(run.filename)} · ${escapeHtml(t('statuses.' + run.status))} · ${run.processed_rows} / ${run.total_rows}</p>`,
             '<div class="progress"><span style="width:' + run.percent + '%"></span></div>',
-            `<p class="meta">Valid ${run.valid_rows} · Failed ${run.failed_rows} · Imported ${run.imported_rows}</p>`,
-            busy ? '<button class="danger" id="sheetflow-cancel" type="button">Cancel</button>' : '',
+            `<p class="meta">${escapeHtml(t('valid'))} ${run.valid_rows} · ${escapeHtml(t('failed'))} ${run.failed_rows} · ${escapeHtml(t('imported'))} ${run.imported_rows}</p>`,
+            busy ? `<button class="danger" id="sheetflow-cancel" type="button">${escapeHtml(t('cancel'))}</button>` : '',
             '</section>',
         ].join('');
     }
@@ -108,16 +141,16 @@
             return `<tr>${cells}</tr>`;
         }).join('');
         const sheets = (run.sheet_names || []).length > 1
-            ? `<label>Sheet<select id="sheetflow-sheet">${run.sheet_names.map((name) => `<option value="${escapeHtml(name)}" ${name === run.sheet ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}</select></label>`
+            ? `<label>${escapeHtml(t('sheet'))}<select id="sheetflow-sheet">${run.sheet_names.map((name) => `<option value="${escapeHtml(name)}" ${name === run.sheet ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}</select></label>`
             : '';
 
-        return `<section><h2>2. Preview</h2>${sheets}<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></section>`;
+        return `<section><h2>${escapeHtml(t('preview_heading'))}</h2>${sheets}<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></section>`;
     }
 
     function mappingSection() {
         const rows = run.fields.map((field) => {
             const selected = run.column_map[field.name] ?? '';
-            const options = ['<option value="">Skip</option>'].concat(
+            const options = [`<option value="">${escapeHtml(t('skip'))}</option>`].concat(
                 run.headers.map((header) => {
                     const isSelected = header === selected ? ' selected' : '';
 
@@ -131,30 +164,45 @@
         const templates = (run.templates || []).map((template) => `<option value="${template.id}">${escapeHtml(template.name)}</option>`).join('');
 
         return [
-            '<section><h2>3. Map columns</h2>',
-            templates ? `<label>Saved template<select id="sheetflow-template"><option value="">Choose</option>${templates}</select></label>` : '',
-            `<table><thead><tr><th>Field</th><th>File column</th></tr></thead><tbody>${rows}</tbody></table>`,
-            '<label>Template name<input id="sheetflow-template-name" type="text" maxlength="255"></label>',
-            '<div class="row"><button type="button" id="sheetflow-save-map">Save mapping</button></div>',
+            `<section><h2>${escapeHtml(t('map_heading'))}</h2>`,
+            templates ? `<label>${escapeHtml(t('saved_template'))}<select id="sheetflow-template"><option value="">${escapeHtml(t('choose'))}</option>${templates}</select></label>` : '',
+            `<table><thead><tr><th>${escapeHtml(t('field'))}</th><th>${escapeHtml(t('file_column'))}</th></tr></thead><tbody>${rows}</tbody></table>`,
+            `<label>${escapeHtml(t('template_name'))}<input id="sheetflow-template-name" type="text" maxlength="255"></label>`,
+            `<div class="row"><button type="button" id="sheetflow-save-map">${escapeHtml(t('save_mapping'))}</button></div>`,
             '</section>',
         ].join('');
     }
 
     function actionsSection() {
         return [
-            '<section><h2>4. Validate and import</h2>',
+            `<section><h2>${escapeHtml(t('actions_heading'))}</h2>`,
             '<div class="row">',
-            '<button type="button" id="sheetflow-validate" ' + (run.status === 'staged' ? '' : 'disabled') + '>Validate</button>',
-            '<button type="button" id="sheetflow-import" ' + (run.status === 'validated' && run.valid_rows > 0 ? '' : 'disabled') + '>Import valid rows</button>',
-            '</div></section>',
+            '<button type="button" id="sheetflow-validate" ' + (run.status === 'staged' ? '' : 'disabled') + `>${escapeHtml(t('validate'))}</button>`,
+            '<button type="button" id="sheetflow-import" ' + (run.status === 'validated' && run.valid_rows > 0 ? '' : 'disabled') + `>${escapeHtml(t('import_valid'))}</button>`,
+            '</div>',
+            validationNotice(),
+            '</section>',
         ].join('');
+    }
+
+    function validationNotice() {
+        if (!run || run.status !== 'validated') {
+            return '';
+        }
+
+        const key = run.failed_rows > 0 ? 'validated_partial' : 'validated_ready';
+
+        return `<p class="notice">${escapeHtml(fill(key, {
+            valid: run.valid_rows,
+            failed: run.failed_rows,
+        }))}</p>`;
     }
 
     function showError(error) {
         const node = document.getElementById('sheetflow-error');
 
         if (node) {
-            node.textContent = error.message ?? 'Something went wrong.';
+            node.textContent = error.message ?? t('something_wrong');
         }
     }
 
@@ -241,7 +289,8 @@
         try {
             run = await request(`${api}/runs/${run.id}/validation`, {
                 method: 'POST',
-                headers,
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ column_map: currentMap() }),
             });
             render();
             watch();
@@ -290,7 +339,7 @@
             return `<tr><td>${failure.row_number}</td><td>${escapeHtml(messages)}</td></tr>`;
         }).join('');
 
-        target.innerHTML = `<section><h2>Row errors</h2><table><thead><tr><th>Row</th><th>Error</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+        target.innerHTML = `<section><h2>${escapeHtml(t('row_errors'))}</h2><table><thead><tr><th>${escapeHtml(t('row'))}</th><th>${escapeHtml(t('error'))}</th></tr></thead><tbody>${rows}</tbody></table></section>`;
     }
 
     function watch() {

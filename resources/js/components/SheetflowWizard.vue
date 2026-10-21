@@ -1,31 +1,31 @@
 <template>
-    <main class="sheetflow">
-        <h1>Import spreadsheet</h1>
-        <p class="lead">Upload a CSV, XLSX, or ODS file, map the columns, then validate and import.</p>
+    <main v-if="ready" class="sheetflow">
+        <h1>{{ text('title') }}</h1>
+        <p class="lead">{{ text('lead') }}</p>
 
         <section>
-            <h2>1. Upload</h2>
+            <h2>{{ text('upload_heading') }}</h2>
             <form @submit.prevent="upload">
                 <label>
-                    File
-                    <input type="file" accept=".csv,.txt,.xlsx,.ods" @change="onFile">
+                    {{ text('file') }}
+                    <input type="file" accept=".csv,.txt,.xls,.xlsx,.ods" @change="onFile">
                 </label>
-                <button type="submit">Upload</button>
+                <button type="submit">{{ text('upload') }}</button>
             </form>
         </section>
 
         <section v-if="run">
-            <h2>Progress</h2>
-            <p class="meta">{{ run.filename }} · {{ run.status }} · {{ run.processed_rows }} / {{ run.total_rows }}</p>
+            <h2>{{ text('progress') }}</h2>
+            <p class="meta">{{ run.filename }} · {{ text('statuses.' + run.status) }} · {{ run.processed_rows }} / {{ run.total_rows }}</p>
             <div class="progress"><span :style="{ width: run.percent + '%' }"></span></div>
-            <p class="meta">Valid {{ run.valid_rows }} · Failed {{ run.failed_rows }} · Imported {{ run.imported_rows }}</p>
-            <button v-if="busy" class="danger" type="button" @click="cancel">Cancel</button>
+            <p class="meta">{{ text('valid') }} {{ run.valid_rows }} · {{ text('failed') }} {{ run.failed_rows }} · {{ text('imported') }} {{ run.imported_rows }}</p>
+            <button v-if="busy" class="danger" type="button" @click="cancel">{{ text('cancel') }}</button>
         </section>
 
         <section v-if="run && run.headers.length">
-            <h2>2. Preview</h2>
+            <h2>{{ text('preview_heading') }}</h2>
             <label v-if="run.sheet_names.length > 1">
-                Sheet
+                {{ text('sheet') }}
                 <select :value="run.sheet" @change="changeSheet">
                     <option v-for="name in run.sheet_names" :key="name" :value="name">{{ name }}</option>
                 </select>
@@ -45,19 +45,19 @@
         </section>
 
         <section v-if="run && mapped">
-            <h2>3. Map columns</h2>
+            <h2>{{ text('map_heading') }}</h2>
             <label v-if="run.templates.length">
-                Saved template
+                {{ text('saved_template') }}
                 <select @change="applyTemplate">
-                    <option value="">Choose</option>
+                    <option value="">{{ text('choose') }}</option>
                     <option v-for="template in run.templates" :key="template.id" :value="template.id">{{ template.name }}</option>
                 </select>
             </label>
             <table>
                 <thead>
                     <tr>
-                        <th>Field</th>
-                        <th>File column</th>
+                        <th>{{ text('field') }}</th>
+                        <th>{{ text('file_column') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -65,7 +65,7 @@
                         <td>{{ field.label }}<span v-if="field.required"> *</span></td>
                         <td>
                             <select v-model="columnMap[field.name]">
-                                <option :value="null">Skip</option>
+                                <option :value="null">{{ text('skip') }}</option>
                                 <option v-for="header in run.headers" :key="header" :value="header">{{ header }}</option>
                             </select>
                         </td>
@@ -73,27 +73,28 @@
                 </tbody>
             </table>
             <label>
-                Template name
+                {{ text('template_name') }}
                 <input v-model="templateName" type="text" maxlength="255">
             </label>
-            <button type="button" @click="saveMapping">Save mapping</button>
+            <button type="button" @click="saveMapping">{{ text('save_mapping') }}</button>
         </section>
 
         <section v-if="run">
-            <h2>4. Validate and import</h2>
+            <h2>{{ text('actions_heading') }}</h2>
             <div class="row">
-                <button type="button" :disabled="run.status !== 'staged'" @click="validateRun">Validate</button>
-                <button type="button" :disabled="run.status !== 'validated' || run.valid_rows < 1" @click="importRows">Import valid rows</button>
+                <button type="button" :disabled="run.status !== 'staged'" @click="validateRun">{{ text('validate') }}</button>
+                <button type="button" :disabled="run.status !== 'validated' || run.valid_rows < 1" @click="importRows">{{ text('import_valid') }}</button>
             </div>
+            <p v-if="run.status === 'validated'" class="notice">{{ validationNotice }}</p>
         </section>
 
         <section v-if="failures.length">
-            <h2>Row errors</h2>
+            <h2>{{ text('row_errors') }}</h2>
             <table>
                 <thead>
                     <tr>
-                        <th>Row</th>
-                        <th>Error</th>
+                        <th>{{ text('row') }}</th>
+                        <th>{{ text('error') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -110,14 +111,17 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import '../../css/wizard.css';
 
 const props = defineProps({
     definition: { type: String, required: true },
     apiBase: { type: String, required: true },
+    messages: { type: Object, default: null },
 });
 
+const copy = ref(props.messages ?? {});
+const ready = ref(props.messages !== null);
 const run = ref(null);
 const file = ref(null);
 const columnMap = ref({});
@@ -143,6 +147,62 @@ watch(run, (value) => {
     }
 });
 
+function text(path) {
+    const value = path.split('.').reduce((carry, key) => {
+        if (carry && typeof carry === 'object' && Object.prototype.hasOwnProperty.call(carry, key)) {
+            return carry[key];
+        }
+
+        return undefined;
+    }, copy.value);
+
+    return typeof value === 'string' ? value : path;
+}
+
+function fill(path, replacements) {
+    let value = text(path);
+
+    Object.entries(replacements).forEach(([key, replacement]) => {
+        value = value.replaceAll(':' + key, String(replacement));
+    });
+
+    return value;
+}
+
+const validationNotice = computed(() => {
+    if (!run.value || run.value.status !== 'validated') {
+        return '';
+    }
+
+    const key = run.value.failed_rows > 0 ? 'validated_partial' : 'validated_ready';
+
+    return fill(key, {
+        valid: run.value.valid_rows,
+        failed: run.value.failed_rows,
+    });
+});
+
+onMounted(async () => {
+    if (props.messages !== null) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${props.apiBase}/translations`, {
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+        const payload = await response.json();
+        copy.value = payload && typeof payload === 'object' ? payload : {};
+    } catch (caught) {
+        copy.value = {};
+    }
+
+    ready.value = true;
+});
+
 function token() {
     return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
 }
@@ -163,7 +223,7 @@ async function request(url, options) {
     if (!response.ok) {
         const errors = payload.errors ?? {};
         const first = Object.values(errors)[0];
-        throw new Error(Array.isArray(first) ? first[0] : (payload.message ?? 'The request failed.'));
+        throw new Error(Array.isArray(first) ? first[0] : (payload.message ?? text('request_failed')));
     }
 
     return payload;
@@ -241,6 +301,7 @@ async function validateRun() {
         run.value = await request(`${props.apiBase}/runs/${run.value.id}/validation`, {
             method: 'POST',
             headers: jsonHeaders(),
+            body: JSON.stringify({ column_map: columnMap.value }),
         });
         watchRun();
     } catch (caught) {

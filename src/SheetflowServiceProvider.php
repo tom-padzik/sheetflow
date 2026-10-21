@@ -6,8 +6,10 @@ namespace Tpadzik\Sheetflow;
 
 use Illuminate\Support\ServiceProvider;
 use Tpadzik\Sheetflow\Contracts\SpreadsheetReaderInterface;
-use Tpadzik\Sheetflow\Readers\OpenSpoutSpreadsheetReader;
+use Tpadzik\Sheetflow\Readers\SpreadsheetReader;
 use Tpadzik\Sheetflow\Support\DefinitionRegistry;
+use Tpadzik\Sheetflow\Support\ImportGate;
+use Tpadzik\Sheetflow\Support\UiPaths;
 
 class SheetflowServiceProvider extends ServiceProvider
 {
@@ -15,14 +17,21 @@ class SheetflowServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/sheetflow.php', 'sheetflow');
         $this->app->singleton(DefinitionRegistry::class);
-        $this->app->singleton(SpreadsheetReaderInterface::class, OpenSpoutSpreadsheetReader::class);
+        $this->app->singleton(ImportGate::class);
+        $this->app->singleton(SpreadsheetReaderInterface::class, SpreadsheetReader::class);
     }
 
     public function boot(): void
     {
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'sheetflow');
-        $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
+        $this->loadTranslationsFrom(__DIR__.'/../lang', 'sheetflow');
+
+        if ($this->app['config']->get('sheetflow.register_routes', true)) {
+            Sheetflow::routes();
+        }
+
+        Sheetflow::registerConfiguredWizards();
 
         if ($this->app->runningInConsole()) {
             $this->publishes([
@@ -32,6 +41,12 @@ class SheetflowServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__.'/../database/migrations' => database_path('migrations'),
             ], 'sheetflow-migrations');
+
+            $this->publishes(UiPaths::publishable(), 'sheetflow-ui');
+
+            $this->publishes([
+                __DIR__.'/../lang' => $this->app->langPath('vendor/sheetflow'),
+            ], 'sheetflow-translations');
         }
     }
 }

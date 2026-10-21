@@ -2,184 +2,378 @@
 
 declare(strict_types=1);
 
+namespace Tpadzik\Sheetflow\Tests\Feature;
+
+use DateTimeImmutable;
+use DateTimeZone;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Schema;
+use PhpOffice\PhpSpreadsheet\Shared\Date;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xls;
+use PHPUnit\Framework\Attributes\Test;
 use Tpadzik\Sheetflow\Models\ImportRun;
 use Tpadzik\Sheetflow\Sheetflow;
 use Tpadzik\Sheetflow\Tests\Fixtures\CustomProductImport;
 use Tpadzik\Sheetflow\Tests\Fixtures\Product;
 use Tpadzik\Sheetflow\Tests\Fixtures\ProductImport;
 use Tpadzik\Sheetflow\Tests\Fixtures\User;
+use Tpadzik\Sheetflow\Tests\TestCase;
 
-beforeEach(function (): void {
-    Sheetflow::definition(key: 'products', definition: ProductImport::class);
-    Sheetflow::definition(key: 'custom-products', definition: CustomProductImport::class);
-
-    Schema::create('products', function ($table): void {
-        $table->id();
-        $table->string('sku')->unique();
-        $table->string('name');
-        $table->decimal('price', 8, 2)->nullable();
-        $table->timestamps();
-    });
-
-    Schema::create('users', function ($table): void {
-        $table->id();
-        $table->string('name');
-        $table->string('email')->unique();
-        $table->string('password');
-        $table->timestamps();
-    });
-});
-
-it('guesses columns and previews the uploaded file', function (): void {
-    $run = uploadCsv("kod,name,price\nA-1,Widget,9.50\n");
-
-    expect($run['column_map']['sku'])->toBe('kod')
-        ->and($run['column_map']['name'])->toBe('name')
-        ->and($run['status'])->toBe('staged')
-        ->and($run['preview_rows'])->toHaveCount(1)
-        ->and($run['total_rows'])->toBe(1);
-});
-
-it('detects a semicolon delimiter', function (): void {
-    $run = uploadCsv("sku;name;price\nA-1;Widget;3\n");
-
-    expect($run['delimiter'])->toBe(';')
-        ->and($run['preview_rows'][0]['name'])->toBe('Widget');
-});
-
-it('rejects an unknown definition', function (): void {
-    $file = UploadedFile::fake()->createWithContent('products.csv', "sku,name,price\nA,B,1\n");
-
-    $this->post(route('sheetflow.uploads.store', ['definition' => 'missing']), [
-        'file' => $file,
-    ])->assertNotFound();
-});
-
-it('keeps invalid rows out of the database and imports the valid ones', function (): void {
-    $run = uploadCsv("sku,name,price\nA-1,Widget,9.50\n,Missing,nope\n");
-
-    $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
-        ->assertOk()
-        ->json();
-
-    expect($validated['status'])->toBe('validated')
-        ->and($validated['valid_rows'])->toBe(1)
-        ->and($validated['failed_rows'])->toBe(1)
-        ->and(Product::query()->count())->toBe(0);
-
-    $failures = $this->getJson(route('sheetflow.runs.failures', ['run' => $run['id']]))
-        ->assertOk()
-        ->json('data');
-
-    expect($failures)->toHaveCount(1)
-        ->and($failures[0]['row_number'])->toBe(3);
-
-    $imported = $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))
-        ->assertOk()
-        ->json();
-
-    expect($imported['status'])->toBe('completed')
-        ->and($imported['imported_rows'])->toBe(1)
-        ->and(Product::query()->where('sku', 'A-1')->exists())->toBeTrue();
-});
-
-it('updates an existing row when the match field is the same', function (): void {
-    Product::query()->create([
-        'sku' => 'A-1',
-        'name' => 'Old',
-        'price' => 1,
-    ]);
-
-    $run = uploadCsv("sku,name,price\nA-1,New,4\n");
-    $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))->assertOk();
-    $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
-
-    expect(Product::query()->count())->toBe(1)
-        ->and(Product::query()->first()->name)->toBe('New');
-});
-
-it('uses a custom persist method instead of the default upsert', function (): void {
-    $file = UploadedFile::fake()->createWithContent('products.csv', "sku,name,price\nA-1,Widget,2\n");
-
-    $run = $this->post(route('sheetflow.uploads.store', ['definition' => 'custom-products']), [
-        'file' => $file,
-    ])->assertCreated()->json();
-
-    $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))->assertOk();
-    $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
-
-    expect(Product::query()->where('sku', 'custom-A-1')->exists())->toBeTrue();
-});
-
-it('stores a mapping template and offers it for the same headers', function (): void {
-    $first = uploadCsv("kod,name,price\nA-1,Widget,2\n");
-
-    $this->putJson(route('sheetflow.runs.mapping', ['run' => $first['id']]), [
-        'column_map' => $first['column_map'],
-        'save_template' => true,
-        'template_name' => 'Shop',
-    ])->assertOk();
-
-    $second = uploadCsv("kod,name,price\nB-2,Other,3\n");
-
-    expect($second['templates'])->toHaveCount(1)
-        ->and($second['templates'][0]['name'])->toBe('Shop')
-        ->and($second['templates'][0]['column_map']['sku'])->toBe('kod');
-});
-
-it('hides a run from a different user', function (): void {
-    $owner = User::query()->create([
-        'name' => 'Owner',
-        'email' => 'owner@example.com',
-        'password' => 'secret',
-    ]);
-    $other = User::query()->create([
-        'name' => 'Other',
-        'email' => 'other@example.com',
-        'password' => 'secret',
-    ]);
-
-    $run = $this->actingAs($owner)->post(
-        route('sheetflow.uploads.store', ['definition' => 'products']),
-        ['file' => UploadedFile::fake()->createWithContent('products.csv', "sku,name,price\nA,B,1\n")],
-    )->assertCreated()->json();
-
-    $this->actingAs($other)
-        ->getJson(route('sheetflow.runs.show', ['run' => $run['id']]))
-        ->assertForbidden();
-});
-
-it('cancels a validation batch before the chunks run', function (): void {
-    $run = uploadCsv("sku,name,price\nA-1,Widget,2\nB-2,Other,3\n");
-
-    config(['queue.default' => 'database']);
-
-    $started = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
-        ->assertOk()
-        ->json();
-
-    $batchId = ImportRun::query()->find($run['id'])->batch_id;
-
-    expect($started['status'])->toBe('validating')
-        ->and($batchId)->not->toBeNull();
-
-    $cancelled = $this->postJson(route('sheetflow.runs.cancel', ['run' => $run['id']]))
-        ->assertOk()
-        ->json();
-
-    expect($cancelled['status'])->toBe('cancelled')
-        ->and(Bus::findBatch($batchId)?->cancelled())->toBeTrue()
-        ->and(Product::query()->count())->toBe(0);
-});
-
-function uploadCsv(string $contents): array
+class ImportFlowTest extends TestCase
 {
-    $file = UploadedFile::fake()->createWithContent('products.csv', $contents);
+    protected function setUp(): void
+    {
+        parent::setUp();
 
-    return test()->post(route('sheetflow.uploads.store', ['definition' => 'products']), [
-        'file' => $file,
-    ])->assertCreated()->json();
+        Sheetflow::definition(key: 'products', definition: ProductImport::class);
+        Sheetflow::definition(key: 'custom-products', definition: CustomProductImport::class);
+
+        Schema::create('products', function (Blueprint $table): void {
+            $table->id();
+            $table->string('sku')->unique();
+            $table->string('name');
+            $table->decimal('price', 8, 2)->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('users', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->string('email')->unique();
+            $table->string('password');
+            $table->timestamps();
+        });
+    }
+
+    #[Test]
+    public function test_guesses_columns_and_previews_the_uploaded_file(): void
+    {
+        $run = $this->uploadCsv("kod,name,price\nA-1,Widget,9.50\n");
+
+        $this->assertSame('kod', $run['column_map']['sku']);
+        $this->assertSame('name', $run['column_map']['name']);
+        $this->assertSame('staged', $run['status']);
+        $this->assertCount(1, $run['preview_rows']);
+        $this->assertSame(1, $run['total_rows']);
+    }
+
+    #[Test]
+    public function test_detects_a_semicolon_delimiter(): void
+    {
+        $run = $this->uploadCsv("ID;name;price\nA-1;Widget;3\n");
+
+        $this->assertSame(';', $run['delimiter']);
+        $this->assertSame('Widget', $run['preview_rows'][0]['name']);
+    }
+
+    #[Test]
+    public function test_rejects_an_unknown_definition(): void
+    {
+        $file = UploadedFile::fake()->createWithContent('products.csv', "ID,name,price\nA,B,1\n");
+
+        $this->post(route('sheetflow.uploads.store', ['definition' => 'missing']), [
+            'file' => $file,
+        ])->assertNotFound();
+    }
+
+    #[Test]
+    public function test_keeps_invalid_rows_out_of_the_database_and_imports_the_valid_ones(): void
+    {
+        $run = $this->uploadCsv("ID,name,price\nA-1,Widget,9.50\n,Missing,nope\n");
+
+        $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
+            ->assertOk()
+            ->json();
+
+        $this->assertIsArray($validated);
+        $this->assertSame('validated', $validated['status']);
+        $this->assertSame(1, $validated['valid_rows']);
+        $this->assertSame(1, $validated['failed_rows']);
+        $this->assertSame(0, Product::query()->count());
+
+        $failures = $this->getJson(route('sheetflow.runs.failures', ['run' => $run['id']]))
+            ->assertOk()
+            ->json('data');
+
+        $this->assertIsArray($failures);
+        $this->assertCount(1, $failures);
+        $this->assertSame(3, $failures[0]['row_number']);
+
+        $imported = $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))
+            ->assertOk()
+            ->json();
+
+        $this->assertIsArray($imported);
+        $this->assertSame('completed', $imported['status']);
+        $this->assertSame(1, $imported['imported_rows']);
+        $this->assertTrue(Product::query()->where('sku', 'A-1')->exists());
+    }
+
+    #[Test]
+    public function test_updates_an_existing_row_when_the_match_field_is_the_same(): void
+    {
+        Product::query()->create([
+            'sku' => 'A-1',
+            'name' => 'Old',
+            'price' => 1,
+        ]);
+
+        $run = $this->uploadCsv("ID,name,price\nA-1,New,4\n");
+        $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))->assertOk();
+        $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
+
+        $this->assertSame(1, Product::query()->count());
+        $this->assertSame('New', Product::query()->first()->name);
+    }
+
+    #[Test]
+    public function test_uses_a_custom_persist_method_instead_of_the_default_upsert(): void
+    {
+        $file = UploadedFile::fake()->createWithContent('products.csv', "ID,name,price\nA-1,Widget,2\n");
+
+        $run = $this->post(route('sheetflow.uploads.store', ['definition' => 'custom-products']), [
+            'file' => $file,
+        ])->assertCreated()->json();
+
+        $this->assertIsArray($run);
+
+        $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))->assertOk();
+        $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
+
+        $this->assertTrue(Product::query()->where('sku', 'custom-A-1')->exists());
+    }
+
+    #[Test]
+    public function test_stores_a_mapping_template_and_offers_it_for_the_same_headers(): void
+    {
+        $first = $this->uploadCsv("kod,name,price\nA-1,Widget,2\n");
+
+        $this->putJson(route('sheetflow.runs.mapping', ['run' => $first['id']]), [
+            'column_map' => $first['column_map'],
+            'save_template' => true,
+            'template_name' => 'Shop',
+        ])->assertOk();
+
+        $second = $this->uploadCsv("kod,name,price\nB-2,Other,3\n");
+
+        $this->assertCount(1, $second['templates']);
+        $this->assertSame('Shop', $second['templates'][0]['name']);
+        $this->assertSame('kod', $second['templates'][0]['column_map']['sku']);
+    }
+
+    #[Test]
+    public function test_hides_a_mapping_template_from_another_user(): void
+    {
+        $owner = User::query()->create([
+            'name' => 'Owner',
+            'email' => 'owner@example.com',
+            'password' => 'secret',
+        ]);
+        $other = User::query()->create([
+            'name' => 'Other',
+            'email' => 'other@example.com',
+            'password' => 'secret',
+        ]);
+        $csv = "kod,name,price\nA-1,Widget,2\n";
+
+        $saved = $this->actingAs($owner)->post(route('sheetflow.uploads.store', ['definition' => 'products']), [
+            'file' => UploadedFile::fake()->createWithContent('products.csv', $csv),
+        ])->assertCreated()->json();
+
+        $this->assertIsArray($saved);
+
+        $this->actingAs($owner)->putJson(route('sheetflow.runs.mapping', ['run' => $saved['id']]), [
+            'column_map' => $saved['column_map'],
+            'save_template' => true,
+            'template_name' => 'Shop',
+        ])->assertOk();
+
+        $ownerAgain = $this->actingAs($owner)->post(route('sheetflow.uploads.store', ['definition' => 'products']), [
+            'file' => UploadedFile::fake()->createWithContent('products.csv', $csv),
+        ])->assertCreated()->json();
+
+        $otherRun = $this->actingAs($other)->post(route('sheetflow.uploads.store', ['definition' => 'products']), [
+            'file' => UploadedFile::fake()->createWithContent('products.csv', $csv),
+        ])->assertCreated()->json();
+
+        $this->assertIsArray($ownerAgain);
+        $this->assertCount(1, $ownerAgain['templates']);
+        $this->assertSame('Shop', $ownerAgain['templates'][0]['name']);
+
+        $this->assertIsArray($otherRun);
+        $this->assertSame([], $otherRun['templates']);
+    }
+
+    #[Test]
+    public function test_matches_an_owner_whose_key_arrives_as_a_numeric_string(): void
+    {
+        $owner = new User;
+        $owner->setRawAttributes(['id' => '4']);
+
+        $run = new ImportRun;
+        $run->user_id = 4;
+
+        $this->assertTrue($run->ownedBy($owner));
+    }
+
+    #[Test]
+    public function test_hides_a_run_from_a_different_user(): void
+    {
+        $owner = User::query()->create([
+            'name' => 'Owner',
+            'email' => 'owner@example.com',
+            'password' => 'secret',
+        ]);
+        $other = User::query()->create([
+            'name' => 'Other',
+            'email' => 'other@example.com',
+            'password' => 'secret',
+        ]);
+
+        $run = $this->actingAs($owner)->post(
+            route('sheetflow.uploads.store', ['definition' => 'products']),
+            ['file' => UploadedFile::fake()->createWithContent('products.csv', "ID,name,price\nA,B,1\n")],
+        )->assertCreated()->json();
+
+        $this->assertIsArray($run);
+
+        $this->actingAs($owner)
+            ->getJson(route('sheetflow.runs.show', ['run' => $run['id']]))
+            ->assertOk();
+
+        $this->actingAs($other)
+            ->getJson(route('sheetflow.runs.show', ['run' => $run['id']]))
+            ->assertForbidden();
+    }
+
+    #[Test]
+    public function test_previews_rows_from_an_xls_workbook(): void
+    {
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray([
+            ['ID', 'name', 'price', 'updated'],
+            ['A-1', 'Widget', 9.5, Date::PHPToExcel(new DateTimeImmutable('2024-05-01 13:45:00', new DateTimeZone('UTC')))],
+        ]);
+        $sheet->getStyle('D2')->getNumberFormat()->setFormatCode('yyyy-mm-dd hh:mm:ss');
+
+        $temporary = tempnam(sys_get_temp_dir(), 'sheetflow');
+        $path = $temporary.'.xls';
+        rename($temporary, $path);
+        (new Xls($spreadsheet))->save($path);
+        $spreadsheet->disconnectWorksheets();
+
+        $file = new UploadedFile($path, 'products.xls', 'application/vnd.ms-excel', null, true);
+
+        $run = $this->post(route('sheetflow.uploads.store', ['definition' => 'products']), [
+            'file' => $file,
+        ])->assertCreated()->json();
+
+        $this->assertIsArray($run);
+        $this->assertSame('xls', $run['format']);
+        $this->assertSame(['ID', 'name', 'price', 'updated'], $run['headers']);
+        $this->assertSame('Widget', $run['preview_rows'][0]['name']);
+        $this->assertSame('2024-05-01 13:45:00', $run['preview_rows'][0]['updated']);
+    }
+
+    #[Test]
+    public function test_rejects_validation_when_a_required_field_is_not_mapped(): void
+    {
+        $run = $this->uploadCsv("User ID,Name,Points\n5745,Ada,10\n");
+
+        $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.sku.0', 'Map a column to ID.');
+    }
+
+    #[Test]
+    public function test_validates_the_column_map_sent_with_the_validation_request(): void
+    {
+        $run = $this->uploadCsv("User ID,Name,Points\n5745,Ada,10\n");
+
+        $this->assertNull($run['column_map']['sku']);
+
+        $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]), [
+            'column_map' => [
+                'sku' => 'User ID',
+                'name' => 'Name',
+                'price' => 'Points',
+            ],
+        ])->assertOk()->json();
+
+        $this->assertIsArray($validated);
+        $this->assertSame('User ID', $validated['column_map']['sku']);
+        $this->assertSame('validated', $validated['status']);
+        $this->assertSame(1, $validated['valid_rows']);
+        $this->assertSame(0, Product::query()->count());
+    }
+
+    #[Test]
+    public function test_names_the_uploaded_file_when_an_xlsx_archive_cannot_be_read(): void
+    {
+        $file = UploadedFile::fake()->createWithContent('points-export.xlsx', 'not-a-zip');
+
+        $message = $this->postJson(route('sheetflow.uploads.store', ['definition' => 'products']), [
+            'file' => $file,
+        ])->assertUnprocessable()->json('errors.file.0');
+
+        $this->assertIsString($message);
+        $this->assertSame('The file "points-export.xlsx" could not be read: Not a zip archive.', $message);
+        $this->assertStringNotContainsString('storage', $message);
+    }
+
+    #[Test]
+    public function test_returns_422_when_the_upload_is_not_a_spreadsheet(): void
+    {
+        $file = UploadedFile::fake()->create('notes.pdf', 10, 'application/pdf');
+
+        $this->postJson(route('sheetflow.uploads.store', ['definition' => 'products']), [
+            'file' => $file,
+        ])->assertUnprocessable();
+    }
+
+    #[Test]
+    public function test_cancels_a_validation_batch_before_the_chunks_run(): void
+    {
+        $run = $this->uploadCsv("ID,name,price\nA-1,Widget,2\nB-2,Other,3\n");
+
+        config(['queue.default' => 'database']);
+
+        $started = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
+            ->assertOk()
+            ->json();
+
+        $batchId = ImportRun::query()->find($run['id'])->batch_id;
+
+        $this->assertIsArray($started);
+        $this->assertSame('validating', $started['status']);
+        $this->assertNotNull($batchId);
+
+        $cancelled = $this->postJson(route('sheetflow.runs.cancel', ['run' => $run['id']]))
+            ->assertOk()
+            ->json();
+
+        $this->assertIsArray($cancelled);
+        $this->assertSame('cancelled', $cancelled['status']);
+        $this->assertTrue(Bus::findBatch($batchId)?->cancelled());
+        $this->assertSame(0, Product::query()->count());
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function uploadCsv(string $contents): array
+    {
+        $file = UploadedFile::fake()->createWithContent('products.csv', $contents);
+        $payload = $this->post(route('sheetflow.uploads.store', ['definition' => 'products']), [
+            'file' => $file,
+        ])->assertCreated()->json();
+
+        $this->assertIsArray($payload);
+
+        return $payload;
+    }
 }

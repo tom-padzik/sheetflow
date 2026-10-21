@@ -120,6 +120,11 @@ body {
     margin: 8px 0 0;
 }
 
+.sheetflow .notice {
+    color: #0f766e;
+    margin: 12px 0 0;
+}
+
 .sheetflow .meta {
     color: #57534e;
     font-size: 14px;

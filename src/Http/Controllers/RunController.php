@@ -24,6 +24,7 @@ class RunController extends SheetflowController
     public function store(UploadImportRequest $request, string $definition): JsonResponse
     {
         $this->known($definition);
+        $this->authorizeDefinition($definition);
 
         $file = $request->file('file');
 
@@ -86,9 +87,25 @@ class RunController extends SheetflowController
         return response()->json($this->pipeline->present($run));
     }
 
-    public function validateRun(ImportRun $run): JsonResponse
+    public function validateRun(Request $request, ImportRun $run): JsonResponse
     {
         $this->authorizeRun($run);
+
+        $data = $request->validate([
+            'column_map' => ['sometimes', 'array'],
+            'column_map.*' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        if (isset($data['column_map']) && is_array($data['column_map'])) {
+            /** @var array<string, string|null> $columnMap */
+            $columnMap = $data['column_map'];
+            $run = $this->pipeline->saveMapping(
+                run: $run,
+                columnMap: $columnMap,
+                saveTemplate: false,
+                templateName: null,
+            );
+        }
 
         $run = $this->pipeline->startValidation($run);
 

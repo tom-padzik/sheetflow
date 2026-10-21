@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tpadzik\Sheetflow\Models;
 
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -52,6 +53,7 @@ class ImportRun extends Model
     {
         return [
             'status' => RunStatus::class,
+            'user_id' => 'integer',
             'headers' => 'array',
             'sheet_names' => 'array',
             'preview_rows' => 'array',
@@ -61,6 +63,17 @@ class ImportRun extends Model
             'completed_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
+    }
+
+    public function ownedBy(?Authenticatable $user): bool
+    {
+        if (null === $user) {
+            return null === $this->user_id;
+        }
+
+        $ownerId = $this->normalizeOwnerId($user->getAuthIdentifier());
+
+        return null !== $this->user_id && null !== $ownerId && $this->user_id === $ownerId;
     }
 
     /**
@@ -77,5 +90,18 @@ class ImportRun extends Model
     public function failures(): HasMany
     {
         return $this->hasMany(ImportFailure::class, 'run_id');
+    }
+
+    private function normalizeOwnerId(mixed $identifier): ?int
+    {
+        if (is_int($identifier)) {
+            return $identifier;
+        }
+
+        if (is_string($identifier) && ctype_digit($identifier)) {
+            return (int) $identifier;
+        }
+
+        return null;
     }
 }

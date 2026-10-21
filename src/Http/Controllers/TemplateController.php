@@ -24,6 +24,8 @@ class TemplateController extends SheetflowController
             abort(404);
         }
 
+        $this->authorizeDefinition($definition);
+
         $signature = $request->string('header_signature')->toString();
         $query = MappingTemplate::query()->where('definition_key', $definition);
 
