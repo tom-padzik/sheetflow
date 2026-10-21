@@ -12,7 +12,7 @@ class StopPriceImport extends ProductImport
     public function fields(): array
     {
         return [
-            Field::make('sku')->label('ID')->rules(['required', 'string'])->matchOn()->guess(['kod']),
+            Field::make('id')->label('ID')->rules(['required', 'string'])->matchOn()->guess(['kod']),
             Field::make('name')->rules(['required', 'string']),
             Field::make('price')->rules(['numeric'])->onInvalid(action: InvalidAction::Stop),
         ];

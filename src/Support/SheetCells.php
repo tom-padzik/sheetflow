@@ -37,12 +37,16 @@ class SheetCells
             throw new InvalidSpreadsheetException(__('sheetflow::messages.errors.no_header'));
         }
 
-        foreach (array_count_values($headers) as $header => $count) {
-            if ($count > 1) {
-                throw new InvalidSpreadsheetException(__('sheetflow::messages.errors.duplicate_header', [
-                    'column' => $header,
-                ]));
-            }
+        $counts = array_count_values($headers);
+        $duplicate = ArrayCompat::find(
+            array: array_keys($counts),
+            callback: fn (string $header): bool => $counts[$header] > 1,
+        );
+
+        if (is_string($duplicate)) {
+            throw new InvalidSpreadsheetException(__('sheetflow::messages.errors.duplicate_header', [
+                'column' => $duplicate,
+            ]));
         }
 
         return $headers;
@@ -69,13 +73,10 @@ class SheetCells
      */
     public function areEmpty(array $cells): bool
     {
-        foreach ($cells as $cell) {
-            if (null !== $this->stringify($cell)) {
-                return false;
-            }
-        }
-
-        return true;
+        return ArrayCompat::all(
+            array: $cells,
+            callback: fn (mixed $cell): bool => null === $this->stringify($cell),
+        );
     }
 
     public function stringify(mixed $value): ?string

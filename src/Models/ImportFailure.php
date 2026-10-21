@@ -6,7 +6,18 @@ namespace Tpadzik\Sheetflow\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property int $id
+ * @property string $run_id
+ * @property int $row_number
+ * @property array<string, string|null> $values
+ * @property array<string, list<string>> $errors
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read ImportRun $run
+ */
 class ImportFailure extends Model
 {
     protected $table = 'sheetflow_failures';

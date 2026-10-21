@@ -5,11 +5,47 @@ declare(strict_types=1);
 namespace Tpadzik\Sheetflow\Models;
 
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Tpadzik\Sheetflow\Enums\RunStatus;
 
+/**
+ * @property string $id
+ * @property string $definition_key
+ * @property RunStatus $status
+ * @property string $disk
+ * @property string $path
+ * @property string $original_filename
+ * @property string $format
+ * @property string|null $delimiter
+ * @property string|null $sheet
+ * @property string|null $header_signature
+ * @property list<string>|null $headers
+ * @property list<string>|null $sheet_names
+ * @property list<array<string, string|null>>|null $preview_rows
+ * @property array<string, string|null>|null $column_map
+ * @property array<string, string>|null $invalid_actions
+ * @property array<int, array<string, list<string>>>|null $file_errors
+ * @property int $total_rows
+ * @property int $processed_rows
+ * @property int $valid_rows
+ * @property int $failed_rows
+ * @property int|null $stopped_row
+ * @property int $imported_rows
+ * @property int|null $user_id
+ * @property string|null $batch_id
+ * @property Carbon|null $staged_at
+ * @property Carbon|null $validated_at
+ * @property Carbon|null $completed_at
+ * @property Carbon|null $cancelled_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Collection<int, ImportRow> $rows
+ * @property-read Collection<int, ImportFailure> $failures
+ */
 class ImportRun extends Model
 {
     use HasUuids;

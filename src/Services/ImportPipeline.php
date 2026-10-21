@@ -30,6 +30,7 @@ use Tpadzik\Sheetflow\Models\ImportRow;
 use Tpadzik\Sheetflow\Models\ImportRun;
 use Tpadzik\Sheetflow\Models\MappingTemplate;
 use Tpadzik\Sheetflow\Sheetflow;
+use Tpadzik\Sheetflow\Support\ArrayCompat;
 use Tpadzik\Sheetflow\Support\ColumnGuesser;
 use Tpadzik\Sheetflow\Support\DefinitionRegistry;
 use Tpadzik\Sheetflow\Support\HeaderSignature;
@@ -415,7 +416,7 @@ class ImportPipeline
             ]);
         }
 
-        if (0 === (int) $run->valid_rows) {
+        if (0 === $run->valid_rows) {
             throw ValidationException::withMessages([
                 'import' => 'There are no valid rows to import.',
             ]);
@@ -572,8 +573,8 @@ class ImportPipeline
     {
         $definition = $this->definitions->resolve($run->definition_key);
         $saveTemplates = Sheetflow::savesTemplates(definition: $definition);
-        $total = (int) $run->total_rows;
-        $processed = (int) $run->processed_rows;
+        $total = $run->total_rows;
+        $processed = $run->processed_rows;
 
         return [
             'id' => $run->id,
@@ -607,9 +608,9 @@ class ImportPipeline
             'templates' => $saveTemplates ? $this->templatesFor($run) : [],
             'total_rows' => $total,
             'processed_rows' => $processed,
-            'valid_rows' => (int) $run->valid_rows,
-            'failed_rows' => (int) $run->failed_rows,
-            'imported_rows' => (int) $run->imported_rows,
+            'valid_rows' => $run->valid_rows,
+            'failed_rows' => $run->failed_rows,
+            'imported_rows' => $run->imported_rows,
             'percent' => $total > 0 ? (int) floor(($processed / $total) * 100) : 0,
         ];
     }
@@ -737,7 +738,7 @@ class ImportPipeline
     private function fileErrorsFor(ImportDefinition $definition, ImportRun $run, MappedRow $row): array
     {
         $stored = $run->file_errors ?? [];
-        $forRow = $stored[$row->rowNumber] ?? $stored[(string) $row->rowNumber] ?? [];
+        $forRow = $stored[$row->rowNumber] ?? [];
         $errors = [];
         $stops = false;
 
@@ -813,7 +814,7 @@ class ImportPipeline
 
     /**
      * @param  array<mixed, mixed>  $errors
-     * @return array<string, array<string, list<string>>>
+     * @return array<int, array<string, list<string>>>
      */
     private function normalizeFileErrors(array $errors): array
     {
@@ -835,7 +836,7 @@ class ImportPipeline
                     continue;
                 }
 
-                $normalized[(string) $rowNumber][$field] = $list;
+                $normalized[$rowNumber][$field] = $list;
             }
         }
 
@@ -859,13 +860,12 @@ class ImportPipeline
 
     private function fieldNamed(ImportDefinition $definition, string $name): ?Field
     {
-        foreach ($definition->fields() as $field) {
-            if ($field->name() === $name) {
-                return $field;
-            }
-        }
+        $field = ArrayCompat::find(
+            array: $definition->fields(),
+            callback: fn (Field $field): bool => $field->name() === $name,
+        );
 
-        return null;
+        return $field instanceof Field ? $field : null;
     }
 
     private function rememberStop(ImportRun $run, int $rowNumber): void
@@ -965,7 +965,7 @@ class ImportPipeline
             ->orderBy('id')
             ->select('id')
             ->chunkById($chunkSize, function ($rows) use (&$jobs, $jobClass, $run): void {
-                $ids = $rows->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
+                $ids = $rows->pluck('id')->all();
                 $jobs[] = new $jobClass(runId: $run->id, rowIds: $ids);
             });
 
@@ -1177,7 +1177,7 @@ class ImportPipeline
             $actions = $template->invalid_actions ?? [];
 
             return [
-                'id' => (int) $template->id,
+                'id' => $template->id,
                 'name' => $template->name,
                 'column_map' => $map,
                 'invalid_actions' => $actions,
@@ -1226,10 +1226,8 @@ class ImportPipeline
 
     private function assertStatus(ImportRun $run, RunStatus ...$allowed): void
     {
-        foreach ($allowed as $status) {
-            if ($status === $run->status) {
-                return;
-            }
+        if (in_array($run->status, $allowed, true)) {
+            return;
         }
 
         abort(409, __('sheetflow::messages.errors.invalid_status', [

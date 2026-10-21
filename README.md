@@ -155,7 +155,7 @@ class ProductImport extends ImportDefinition
     public function fields(): array
     {
         return [
-            Field::make(name: 'sku')->rules(rules: ['required', 'string'])->matchOn()->guess(guesses: ['SKU', 'kod']),
+            Field::make(name: 'id')->label(label: 'ID')->rules(rules: ['required', 'string'])->matchOn()->guess(guesses: ['kod']),
             Field::make(name: 'name')->rules(rules: ['required', 'string']),
             Field::make(name: 'price')->rules(rules: ['numeric']),
         ];
@@ -192,17 +192,17 @@ public function validateRow(MappedRow $row): array
         $errors['email'][] = 'Enter a valid email address.';
     }
 
-    $id = $row->value(field: 'ID');
+    $id = $row->value(field: 'id');
 
-    if (is_string($id) && '' !== $id && Product::query()->where('ID', $id)->exists()) {
-        $errors['ID'][] = 'This ID already exists.';
+    if (is_string($id) && '' !== $id && Product::query()->where('id', $id)->exists()) {
+        $errors['id'][] = 'This ID already exists.';
     }
 
     return $errors;
 }
 ```
 
-`value()` reads the mapped cell. `occurrences()` counts that same non-empty value across the file, including the current row. A repeated value can also be declared with `uniqueInFile()` on the field. A single cell can use a Laravel rule such as `email` or `unique:products,sku`.
+`value()` reads the mapped cell. `occurrences()` counts that same non-empty value across the file, including the current row. A repeated value can also be declared with `uniqueInFile()` on the field. A single cell can use a Laravel rule such as `email` or `unique:products,id`.
 
 `validateFile()` is optional. It runs once before the per-row rules. Return row numbers mapped to field messages. An empty array accepts every row.
 
@@ -213,15 +213,15 @@ public function validateFile(MappedFile $file): array
 {
     $totals = [];
 
-    foreach ($file->values(fields: ['ID', 'FOO']) as $entry) {
-        $id = (string) ($entry['ID'] ?? '');
+    foreach ($file->values(fields: ['id', 'FOO']) as $entry) {
+        $id = (string) ($entry['id'] ?? '');
         $totals[$id] = ($totals[$id] ?? 0) + (float) ($entry['FOO'] ?? 0);
     }
 
     $errors = [];
 
     foreach ($file->rows() as $row) {
-        $id = (string) $row->value(field: 'ID');
+        $id = (string) $row->value(field: 'id');
 
         if (($totals[$id] ?? 0) > 200) {
             $errors[$row->rowNumber]['FOO'][] = 'The sum for this ID is over 200.';
@@ -237,7 +237,7 @@ public function validateFile(MappedFile $file): array
 ```php
 use Tpadzik\Sheetflow\Enums\InvalidAction;
 
-Field::make(name: 'ID')->rules(rules: ['required', 'string'])->uniqueInFile(),
+Field::make(name: 'id')->rules(rules: ['required', 'string'])->uniqueInFile(),
 Field::make(name: 'price')->rules(rules: ['numeric'])->onInvalid(action: InvalidAction::Null),
 Field::make(name: 'email')->rules(rules: ['email'])->onInvalid(
     action: InvalidAction::SkipRow,
@@ -261,7 +261,7 @@ protected function persist(MappedRow $row): void
     $attributes = $row->attributes();
 
     Product::query()->updateOrCreate(
-        ['sku' => $attributes['sku']],
+        ['id' => $attributes['id']],
         $attributes,
     );
 }
@@ -317,7 +317,7 @@ The upload response is `201` and the run payload. Mapping body:
 
 ```json
 {
-    "column_map": {"sku": "kod", "name": "Name", "price": null},
+    "column_map": {"id": "kod", "name": "Name", "price": null},
     "save_template": true,
     "template_name": "Shop export"
 }
@@ -334,7 +334,7 @@ Failures look like this:
     "data": [
         {
             "row_number": 3,
-            "values": {"sku": "B-2", "name": null, "price": "nope"},
+            "values": {"id": "B-2", "name": null, "price": "nope"},
             "errors": {"name": ["The name field is required."]}
         }
     ],

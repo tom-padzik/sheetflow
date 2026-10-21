@@ -43,19 +43,20 @@ class ColumnGuesser
             $field->guesses(),
         );
 
-        foreach ($candidates as $candidate) {
-            $key = $this->normalize($candidate);
+        $candidate = ArrayCompat::find(
+            array: $candidates,
+            callback: function (string $candidate) use ($normalizedHeaders): bool {
+                $key = $this->normalize($candidate);
 
-            if ('' === $key) {
-                continue;
-            }
+                return '' !== $key && array_key_exists($key, $normalizedHeaders);
+            },
+        );
 
-            if (array_key_exists($key, $normalizedHeaders)) {
-                return $normalizedHeaders[$key];
-            }
+        if (! is_string($candidate)) {
+            return null;
         }
 
-        return null;
+        return $normalizedHeaders[$this->normalize($candidate)];
     }
 
     private function normalize(string $value): string

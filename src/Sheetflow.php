@@ -47,7 +47,7 @@ class Sheetflow
             return $choice;
         }
 
-        return (bool) config('sheetflow.save_templates', true);
+        return config('sheetflow.save_templates', true);
     }
 
     public static function wizard(string $definition): View

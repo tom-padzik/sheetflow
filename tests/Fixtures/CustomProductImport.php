@@ -11,7 +11,7 @@ class CustomProductImport extends ProductImport
     protected function persist(MappedRow $row): void
     {
         Product::query()->create([
-            'sku' => sprintf('custom-%s', $row->attributes()['sku']),
+            'id' => sprintf('custom-%s', $row->attributes()['id']),
             'name' => $row->attributes()['name'],
             'price' => $row->attributes()['price'],
         ]);

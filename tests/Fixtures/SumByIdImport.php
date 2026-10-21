@@ -15,15 +15,15 @@ class SumByIdImport extends ProductImport
         self::$fileChecks++;
         $totals = [];
 
-        foreach ($file->values(fields: ['sku', 'price']) as $entry) {
-            $id = (string) ($entry['sku'] ?? '');
+        foreach ($file->values(fields: ['id', 'price']) as $entry) {
+            $id = (string) ($entry['id'] ?? '');
             $totals[$id] = ($totals[$id] ?? 0) + (float) ($entry['price'] ?? 0);
         }
 
         $errors = [];
 
         foreach ($file->rows() as $row) {
-            $id = (string) $row->value(field: 'sku');
+            $id = (string) $row->value(field: 'id');
 
             if (($totals[$id] ?? 0) > 200) {
                 $errors[$row->rowNumber]['price'][] = 'The sum for this ID is over 200.';

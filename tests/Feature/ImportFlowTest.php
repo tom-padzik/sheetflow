@@ -43,8 +43,7 @@ class ImportFlowTest extends TestCase
         Sheetflow::definition(key: 'custom-products', definition: CustomProductImport::class);
 
         Schema::create('products', function (Blueprint $table): void {
-            $table->id();
-            $table->string('sku')->unique();
+            $table->string('id')->primary();
             $table->string('name');
             $table->decimal('price', 8, 2)->nullable();
             $table->timestamps();
@@ -64,7 +63,7 @@ class ImportFlowTest extends TestCase
     {
         $run = $this->uploadCsv("kod,name,price\nA-1,Widget,9.50\n");
 
-        $this->assertSame('kod', $run['column_map']['sku']);
+        $this->assertSame('kod', $run['column_map']['id']);
         $this->assertSame('name', $run['column_map']['name']);
         $this->assertSame('staged', $run['status']);
         $this->assertCount(1, $run['preview_rows']);
@@ -120,14 +119,14 @@ class ImportFlowTest extends TestCase
         $this->assertIsArray($imported);
         $this->assertSame('completed', $imported['status']);
         $this->assertSame(1, $imported['imported_rows']);
-        $this->assertTrue(Product::query()->where('sku', 'A-1')->exists());
+        $this->assertTrue(Product::query()->where('id', 'A-1')->exists());
     }
 
     #[Test]
     public function test_updates_an_existing_row_when_the_match_field_is_the_same(): void
     {
         Product::query()->create([
-            'sku' => 'A-1',
+            'id' => 'A-1',
             'name' => 'Old',
             'price' => 1,
         ]);
@@ -154,7 +153,7 @@ class ImportFlowTest extends TestCase
         $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))->assertOk();
         $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
 
-        $this->assertTrue(Product::query()->where('sku', 'custom-A-1')->exists());
+        $this->assertTrue(Product::query()->where('id', 'custom-A-1')->exists());
     }
 
     #[Test]
@@ -172,7 +171,7 @@ class ImportFlowTest extends TestCase
 
         $this->assertCount(1, $second['templates']);
         $this->assertSame('Shop', $second['templates'][0]['name']);
-        $this->assertSame('kod', $second['templates'][0]['column_map']['sku']);
+        $this->assertSame('kod', $second['templates'][0]['column_map']['id']);
     }
 
     #[Test]
@@ -297,7 +296,7 @@ class ImportFlowTest extends TestCase
 
         $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
             ->assertUnprocessable()
-            ->assertJsonPath('errors.sku.0', 'Map a column to ID.');
+            ->assertJsonPath('errors.id.0', 'Map a column to ID.');
     }
 
     #[Test]
@@ -305,18 +304,18 @@ class ImportFlowTest extends TestCase
     {
         $run = $this->uploadCsv("User ID,Name,Points\n5745,Ada,10\n");
 
-        $this->assertNull($run['column_map']['sku']);
+        $this->assertNull($run['column_map']['id']);
 
         $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]), [
             'column_map' => [
-                'sku' => 'User ID',
+                'id' => 'User ID',
                 'name' => 'Name',
                 'price' => 'Points',
             ],
         ])->assertOk()->json();
 
         $this->assertIsArray($validated);
-        $this->assertSame('User ID', $validated['column_map']['sku']);
+        $this->assertSame('User ID', $validated['column_map']['id']);
         $this->assertSame('validated', $validated['status']);
         $this->assertSame(1, $validated['valid_rows']);
         $this->assertSame(0, Product::query()->count());
@@ -440,7 +439,7 @@ class ImportFlowTest extends TestCase
     {
         Sheetflow::definition(key: 'products', definition: CheckedProductImport::class);
         Product::query()->create([
-            'sku' => 'B-2',
+            'id' => 'B-2',
             'name' => 'Stored',
             'price' => 1,
         ]);
@@ -464,7 +463,7 @@ class ImportFlowTest extends TestCase
 
         foreach ($failures as $failure) {
             $this->assertIsArray($failure);
-            $messages[$failure['row_number']] = $failure['errors']['sku'][0] ?? null;
+            $messages[$failure['row_number']] = $failure['errors']['id'][0] ?? null;
         }
 
         $this->assertSame('This ID is repeated in the file.', $messages[2]);
@@ -477,8 +476,8 @@ class ImportFlowTest extends TestCase
 
         $this->assertIsArray($imported);
         $this->assertSame(1, $imported['imported_rows']);
-        $this->assertTrue(Product::query()->where('sku', 'C-3')->exists());
-        $this->assertSame('Stored', Product::query()->where('sku', 'B-2')->first()->name);
+        $this->assertTrue(Product::query()->where('id', 'C-3')->exists());
+        $this->assertSame('Stored', Product::query()->where('id', 'B-2')->first()->name);
     }
 
     #[Test]
@@ -501,13 +500,13 @@ class ImportFlowTest extends TestCase
             ->json('data');
 
         $this->assertIsArray($failures);
-        $this->assertSame('The value in ID is repeated in the file.', $failures[0]['errors']['sku'][0]);
-        $this->assertSame('The value in ID is repeated in the file.', $failures[1]['errors']['sku'][0]);
+        $this->assertSame('The value in ID is repeated in the file.', $failures[0]['errors']['id'][0]);
+        $this->assertSame('The value in ID is repeated in the file.', $failures[1]['errors']['id'][0]);
 
         $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
 
-        $this->assertTrue(Product::query()->where('sku', 'B-2')->exists());
-        $this->assertFalse(Product::query()->where('sku', 'A-1')->exists());
+        $this->assertTrue(Product::query()->where('id', 'B-2')->exists());
+        $this->assertFalse(Product::query()->where('id', 'A-1')->exists());
     }
 
     #[Test]
@@ -528,7 +527,7 @@ class ImportFlowTest extends TestCase
         $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
 
         $this->assertSame(1, Product::query()->count());
-        $this->assertEquals(4, Product::query()->where('sku', 'B-3')->first()->price);
+        $this->assertEquals(4, Product::query()->where('id', 'B-3')->first()->price);
     }
 
     #[Test]
@@ -541,7 +540,7 @@ class ImportFlowTest extends TestCase
         $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))->assertOk();
         $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
 
-        $product = Product::query()->where('sku', 'A-1')->first();
+        $product = Product::query()->where('id', 'A-1')->first();
 
         $this->assertNotNull($product);
         $this->assertNull($product->price);
@@ -564,7 +563,7 @@ class ImportFlowTest extends TestCase
         $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
 
         $this->assertFalse(Product::query()->where('name', 'Widget')->exists());
-        $this->assertTrue(Product::query()->where('sku', 'B-2')->exists());
+        $this->assertTrue(Product::query()->where('id', 'B-2')->exists());
     }
 
     #[Test]
@@ -592,7 +591,7 @@ class ImportFlowTest extends TestCase
 
         $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
 
-        $this->assertNull(Product::query()->where('sku', 'A-1')->first()->price);
+        $this->assertNull(Product::query()->where('id', 'A-1')->first()->price);
     }
 
     #[Test]
@@ -643,7 +642,7 @@ class ImportFlowTest extends TestCase
         $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
 
         $this->assertSame(1, Product::query()->count());
-        $this->assertEquals(50, Product::query()->where('sku', 'B-2')->first()->price);
+        $this->assertEquals(50, Product::query()->where('id', 'B-2')->first()->price);
     }
 
     #[Test]
@@ -663,8 +662,8 @@ class ImportFlowTest extends TestCase
 
         $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
 
-        $this->assertFalse(Product::query()->where('sku', 'A-1')->exists());
-        $this->assertTrue(Product::query()->where('sku', 'B-2')->exists());
+        $this->assertFalse(Product::query()->where('id', 'A-1')->exists());
+        $this->assertTrue(Product::query()->where('id', 'B-2')->exists());
     }
 
     /**

@@ -13,7 +13,7 @@ class TranslationController extends SheetflowController
         $messages = __('sheetflow::messages');
 
         if (! is_array($messages)) {
-            return response()->json([]);
+            return response()->json();
         }
 
         return response()->json($messages);
