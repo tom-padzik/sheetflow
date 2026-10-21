@@ -44,7 +44,10 @@ class ImportAuthorizationTest extends TestCase
             ->assertForbidden();
 
         $this->post(route('sheetflow.uploads.store', ['definition' => 'customers']), [
-            'file' => UploadedFile::fake()->createWithContent('people.csv', "ID,name,price\nA,B,1\n"),
+            'file' => UploadedFile::fake()->createWithContent('people.csv', <<<'CSV'
+            ID,name,price
+            A,B,1
+            CSV),
         ])->assertForbidden();
 
         $this->get(route('sheetflow.wizard', ['definition' => 'products']))
@@ -101,7 +104,10 @@ class ImportAuthorizationTest extends TestCase
     public function test_returns_403_for_a_run_when_the_definition_is_forbidden(string $method, string $name): void
     {
         $run = $this->post(route('sheetflow.uploads.store', ['definition' => 'products']), [
-            'file' => UploadedFile::fake()->createWithContent('products.csv', "ID,name,price\nA,B,1\n"),
+            'file' => UploadedFile::fake()->createWithContent('products.csv', <<<'CSV'
+            ID,name,price
+            A,B,1
+            CSV),
         ])->assertCreated()->json();
 
         Sheetflow::authorize(function (?Authenticatable $user, string $definition): bool {

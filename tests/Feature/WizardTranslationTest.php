@@ -19,24 +19,25 @@ class WizardTranslationTest extends TestCase
     }
 
     #[Test]
-    public function test_renders_the_polish_wizard_and_returns_polish_labels(): void
+    public function test_renders_the_english_wizard_and_returns_english_labels(): void
     {
-        app()->setLocale('pl');
+        app()->setLocale('en');
 
         $this->get(route('sheetflow.wizard', ['definition' => 'products']))
             ->assertOk()
-            ->assertSee('Import arkusza', false)
-            ->assertSee('Wgraj plik CSV, XLS, XLSX lub ODS', false);
+            ->assertSee('Import spreadsheet', false)
+            ->assertSee('Upload a CSV, XLS, XLSX, or ODS file', false);
 
         $this->getJson(route('sheetflow.translations'))
             ->assertOk()
-            ->assertJsonPath('title', 'Import arkusza')
-            ->assertJsonPath('statuses.staged', 'Gotowy')
-            ->assertJsonPath('errors.file_not_stored', 'Nie udało się zapisać pliku.')
-            ->assertJsonPath('validated_ready', 'Sprawdzanie zakończone. Wszystkie wiersze są poprawne (:valid). Możesz je zaimportować.')
-            ->assertJsonPath('imported_ready', 'Import zakończony. Wszystkie wiersze zostały zaimportowane (:imported).')
-            ->assertJsonPath('invalid_actions.skip_row', 'Pomiń wiersz')
-            ->assertJsonPath('import_stopped', 'Import przerwany na wierszu :row. Żaden wiersz nie został zaimportowany.');
+            ->assertJsonPath('title', 'Import spreadsheet')
+            ->assertJsonPath('statuses.staged', 'Ready')
+            ->assertJsonPath('errors.file_not_stored', 'The file could not be stored.')
+            ->assertJsonPath('validated_ready', 'Validation finished. All :valid rows are valid. You can import them.')
+            ->assertJsonPath('imported_ready', 'Import finished. All :imported rows were imported.')
+            ->assertJsonPath('invalid_actions.skip_row', 'Skip row')
+            ->assertJsonPath('load_mapping', 'Load mapping')
+            ->assertJsonPath('import_stopped', 'Import stopped at row :row. No rows were imported.');
     }
 
     #[Test]

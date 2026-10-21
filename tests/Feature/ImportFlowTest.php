@@ -61,7 +61,10 @@ class ImportFlowTest extends TestCase
     #[Test]
     public function test_guesses_columns_and_previews_the_uploaded_file(): void
     {
-        $run = $this->uploadCsv("kod,name,price\nA-1,Widget,9.50\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        kod,name,price
+        A-1,Widget,9.50
+        CSV);
 
         $this->assertSame('kod', $run['column_map']['id']);
         $this->assertSame('name', $run['column_map']['name']);
@@ -73,7 +76,10 @@ class ImportFlowTest extends TestCase
     #[Test]
     public function test_detects_a_semicolon_delimiter(): void
     {
-        $run = $this->uploadCsv("ID;name;price\nA-1;Widget;3\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        ID;name;price
+        A-1;Widget;3
+        CSV);
 
         $this->assertSame(';', $run['delimiter']);
         $this->assertSame('Widget', $run['preview_rows'][0]['name']);
@@ -82,7 +88,10 @@ class ImportFlowTest extends TestCase
     #[Test]
     public function test_rejects_an_unknown_definition(): void
     {
-        $file = UploadedFile::fake()->createWithContent('products.csv', "ID,name,price\nA,B,1\n");
+        $file = UploadedFile::fake()->createWithContent('products.csv', <<<'CSV'
+        ID,name,price
+        A,B,1
+        CSV);
 
         $this->post(route('sheetflow.uploads.store', ['definition' => 'missing']), [
             'file' => $file,
@@ -92,7 +101,11 @@ class ImportFlowTest extends TestCase
     #[Test]
     public function test_keeps_invalid_rows_out_of_the_database_and_imports_the_valid_ones(): void
     {
-        $run = $this->uploadCsv("ID,name,price\nA-1,Widget,9.50\n,Missing,nope\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        ID,name,price
+        A-1,Widget,9.50
+        ,Missing,nope
+        CSV);
 
         $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
             ->assertOk()
@@ -131,7 +144,10 @@ class ImportFlowTest extends TestCase
             'price' => 1,
         ]);
 
-        $run = $this->uploadCsv("ID,name,price\nA-1,New,4\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        ID,name,price
+        A-1,New,4
+        CSV);
         $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))->assertOk();
         $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
 
@@ -142,7 +158,10 @@ class ImportFlowTest extends TestCase
     #[Test]
     public function test_uses_a_custom_persist_method_instead_of_the_default_upsert(): void
     {
-        $file = UploadedFile::fake()->createWithContent('products.csv', "ID,name,price\nA-1,Widget,2\n");
+        $file = UploadedFile::fake()->createWithContent('products.csv', <<<'CSV'
+        ID,name,price
+        A-1,Widget,2
+        CSV);
 
         $run = $this->post(route('sheetflow.uploads.store', ['definition' => 'custom-products']), [
             'file' => $file,
@@ -159,19 +178,65 @@ class ImportFlowTest extends TestCase
     #[Test]
     public function test_stores_a_mapping_template_and_offers_it_for_the_same_headers(): void
     {
-        $first = $this->uploadCsv("kod,name,price\nA-1,Widget,2\n");
+        $first = $this->uploadCsv(<<<'CSV'
+        kod,name,price
+        A-1,Widget,2
+        CSV);
 
-        $this->putJson(route('sheetflow.runs.mapping', ['run' => $first['id']]), [
+        $this->postJson(route('sheetflow.runs.validate', ['run' => $first['id']]))->assertOk();
+
+        $saved = $this->putJson(route('sheetflow.runs.mapping', ['run' => $first['id']]), [
             'column_map' => $first['column_map'],
             'save_template' => true,
             'template_name' => 'Shop',
-        ])->assertOk();
+        ])->assertOk()->json();
 
-        $second = $this->uploadCsv("kod,name,price\nB-2,Other,3\n");
+        $this->assertIsArray($saved);
+        $this->assertSame('validated', $saved['status']);
+
+        $second = $this->uploadCsv(<<<'CSV'
+        kod,name,price
+        B-2,Other,3
+        CSV);
 
         $this->assertCount(1, $second['templates']);
         $this->assertSame('Shop', $second['templates'][0]['name']);
         $this->assertSame('kod', $second['templates'][0]['column_map']['id']);
+    }
+
+    #[Test]
+    public function test_refuses_to_store_a_mapping_before_validation_passes(): void
+    {
+        $run = $this->uploadCsv(<<<'CSV'
+        kod,name,price
+        A-1,Widget,2
+        CSV);
+
+        $this->putJson(route('sheetflow.runs.mapping', ['run' => $run['id']]), [
+            'column_map' => $run['column_map'],
+            'save_template' => true,
+            'template_name' => 'Shop',
+        ])->assertStatus(409);
+
+        $failed = $this->uploadCsv(<<<'CSV'
+        kod,name,price
+        A-1,Widget,nope
+        CSV);
+
+        $this->postJson(route('sheetflow.runs.validate', ['run' => $failed['id']]))->assertOk();
+
+        $this->putJson(route('sheetflow.runs.mapping', ['run' => $failed['id']]), [
+            'column_map' => $failed['column_map'],
+            'save_template' => true,
+            'template_name' => 'Shop',
+        ])->assertStatus(409);
+
+        $next = $this->uploadCsv(<<<'CSV'
+        kod,name,price
+        B-2,Other,3
+        CSV);
+
+        $this->assertSame([], $next['templates']);
     }
 
     #[Test]
@@ -187,13 +252,18 @@ class ImportFlowTest extends TestCase
             'email' => 'other@example.com',
             'password' => 'secret',
         ]);
-        $csv = "kod,name,price\nA-1,Widget,2\n";
+        $csv = <<<'CSV'
+        kod,name,price
+        A-1,Widget,2
+        CSV;
 
         $saved = $this->actingAs($owner)->post(route('sheetflow.uploads.store', ['definition' => 'products']), [
             'file' => UploadedFile::fake()->createWithContent('products.csv', $csv),
         ])->assertCreated()->json();
 
         $this->assertIsArray($saved);
+
+        $this->actingAs($owner)->postJson(route('sheetflow.runs.validate', ['run' => $saved['id']]))->assertOk();
 
         $this->actingAs($owner)->putJson(route('sheetflow.runs.mapping', ['run' => $saved['id']]), [
             'column_map' => $saved['column_map'],
@@ -245,7 +315,10 @@ class ImportFlowTest extends TestCase
 
         $run = $this->actingAs($owner)->post(
             route('sheetflow.uploads.store', ['definition' => 'products']),
-            ['file' => UploadedFile::fake()->createWithContent('products.csv', "ID,name,price\nA,B,1\n")],
+            ['file' => UploadedFile::fake()->createWithContent('products.csv', <<<'CSV'
+            ID,name,price
+            A,B,1
+            CSV)],
         )->assertCreated()->json();
 
         $this->assertIsArray($run);
@@ -292,7 +365,10 @@ class ImportFlowTest extends TestCase
     #[Test]
     public function test_rejects_validation_when_a_required_field_is_not_mapped(): void
     {
-        $run = $this->uploadCsv("User ID,Name,Points\n5745,Ada,10\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        User ID,Name,Points
+        5745,Ada,10
+        CSV);
 
         $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
             ->assertUnprocessable()
@@ -302,7 +378,10 @@ class ImportFlowTest extends TestCase
     #[Test]
     public function test_validates_the_column_map_sent_with_the_validation_request(): void
     {
-        $run = $this->uploadCsv("User ID,Name,Points\n5745,Ada,10\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        User ID,Name,Points
+        5745,Ada,10
+        CSV);
 
         $this->assertNull($run['column_map']['id']);
 
@@ -348,7 +427,11 @@ class ImportFlowTest extends TestCase
     #[Test]
     public function test_cancels_a_validation_batch_before_the_chunks_run(): void
     {
-        $run = $this->uploadCsv("ID,name,price\nA-1,Widget,2\nB-2,Other,3\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        ID,name,price
+        A-1,Widget,2
+        B-2,Other,3
+        CSV);
 
         config(['queue.default' => 'database']);
 
@@ -377,7 +460,10 @@ class ImportFlowTest extends TestCase
     {
         config(['sheetflow.save_templates' => false]);
 
-        $run = $this->uploadCsv("kod,name,price\nA-1,Widget,2\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        kod,name,price
+        A-1,Widget,2
+        CSV);
 
         $this->assertFalse($run['save_templates']);
 
@@ -387,7 +473,10 @@ class ImportFlowTest extends TestCase
             'template_name' => 'Shop',
         ])->assertForbidden();
 
-        $second = $this->uploadCsv("kod,name,price\nB-2,Other,3\n");
+        $second = $this->uploadCsv(<<<'CSV'
+        kod,name,price
+        B-2,Other,3
+        CSV);
 
         $this->assertSame([], $second['templates']);
     }
@@ -397,7 +486,10 @@ class ImportFlowTest extends TestCase
     {
         Sheetflow::definition(key: 'products', definition: TemplatesDisabledImport::class);
 
-        $run = $this->uploadCsv("kod,name,price\nA-1,Widget,2\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        kod,name,price
+        A-1,Widget,2
+        CSV);
 
         $this->assertFalse($run['save_templates']);
 
@@ -407,7 +499,10 @@ class ImportFlowTest extends TestCase
             'template_name' => 'Shop',
         ])->assertForbidden();
 
-        $second = $this->uploadCsv("kod,name,price\nB-2,Other,3\n");
+        $second = $this->uploadCsv(<<<'CSV'
+        kod,name,price
+        B-2,Other,3
+        CSV);
 
         $this->assertSame([], $second['templates']);
     }
@@ -418,9 +513,14 @@ class ImportFlowTest extends TestCase
         config(['sheetflow.save_templates' => false]);
         Sheetflow::definition(key: 'products', definition: TemplatesEnabledImport::class);
 
-        $first = $this->uploadCsv("kod,name,price\nA-1,Widget,2\n");
+        $first = $this->uploadCsv(<<<'CSV'
+        kod,name,price
+        A-1,Widget,2
+        CSV);
 
         $this->assertTrue($first['save_templates']);
+
+        $this->postJson(route('sheetflow.runs.validate', ['run' => $first['id']]))->assertOk();
 
         $this->putJson(route('sheetflow.runs.mapping', ['run' => $first['id']]), [
             'column_map' => $first['column_map'],
@@ -428,7 +528,10 @@ class ImportFlowTest extends TestCase
             'template_name' => 'Shop',
         ])->assertOk();
 
-        $second = $this->uploadCsv("kod,name,price\nB-2,Other,3\n");
+        $second = $this->uploadCsv(<<<'CSV'
+        kod,name,price
+        B-2,Other,3
+        CSV);
 
         $this->assertCount(1, $second['templates']);
         $this->assertSame('Shop', $second['templates'][0]['name']);
@@ -444,7 +547,13 @@ class ImportFlowTest extends TestCase
             'price' => 1,
         ]);
 
-        $run = $this->uploadCsv("ID,name,price\nA-1,Widget,1\nA-1,Other,2\nB-2,Fresh,3\nC-3,Ok,4\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        ID,name,price
+        A-1,Widget,1
+        A-1,Other,2
+        B-2,Fresh,3
+        C-3,Ok,4
+        CSV);
 
         $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
             ->assertOk()
@@ -485,7 +594,12 @@ class ImportFlowTest extends TestCase
     {
         Sheetflow::definition(key: 'products', definition: UniqueProductImport::class);
 
-        $run = $this->uploadCsv("ID,name,price\nA-1,One,1\nA-1,Two,2\nB-2,Three,3\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        ID,name,price
+        A-1,One,1
+        A-1,Two,2
+        B-2,Three,3
+        CSV);
 
         $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
             ->assertOk()
@@ -514,7 +628,12 @@ class ImportFlowTest extends TestCase
     {
         Sheetflow::definition(key: 'products', definition: UniqueNullablePriceImport::class);
 
-        $run = $this->uploadCsv("ID,name,price\nA-1,One,nope\nA-2,Two,nope\nB-3,Three,4\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        ID,name,price
+        A-1,One,nope
+        A-2,Two,nope
+        B-3,Three,4
+        CSV);
 
         $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
             ->assertOk()
@@ -535,7 +654,10 @@ class ImportFlowTest extends TestCase
     {
         Sheetflow::definition(key: 'products', definition: NullablePriceImport::class);
 
-        $run = $this->uploadCsv("ID,name,price\nA-1,Widget,nope\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        ID,name,price
+        A-1,Widget,nope
+        CSV);
 
         $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))->assertOk();
         $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
@@ -551,7 +673,11 @@ class ImportFlowTest extends TestCase
     {
         Sheetflow::definition(key: 'products', definition: RequiredNullImport::class);
 
-        $run = $this->uploadCsv("ID,name,price\n,Widget,1\nB-2,Other,2\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        ID,name,price
+        ,Widget,1
+        B-2,Other,2
+        CSV);
         $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
             ->assertOk()
             ->json();
@@ -571,7 +697,10 @@ class ImportFlowTest extends TestCase
     {
         Sheetflow::definition(key: 'products', definition: ChoicePriceImport::class);
 
-        $run = $this->uploadCsv("ID,name,price\nA-1,Widget,nope\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        ID,name,price
+        A-1,Widget,nope
+        CSV);
 
         $this->assertSame(['skip_row', 'null'], $run['fields'][2]['allowed_invalid_actions']);
 
@@ -599,7 +728,11 @@ class ImportFlowTest extends TestCase
     {
         Sheetflow::definition(key: 'products', definition: StopPriceImport::class);
 
-        $run = $this->uploadCsv("ID,name,price\nA-1,Widget,nope\nB-2,Other,3\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        ID,name,price
+        A-1,Widget,nope
+        B-2,Other,3
+        CSV);
 
         $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
             ->assertOk()
@@ -620,7 +753,12 @@ class ImportFlowTest extends TestCase
         SumByIdImport::$fileChecks = 0;
         Sheetflow::definition(key: 'products', definition: SumByIdImport::class);
 
-        $run = $this->uploadCsv("ID,name,price\nA-1,One,150\nA-1,Two,60\nB-2,Three,50\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        ID,name,price
+        A-1,One,150
+        A-1,Two,60
+        B-2,Three,50
+        CSV);
 
         $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
             ->assertOk()
@@ -650,7 +788,11 @@ class ImportFlowTest extends TestCase
     {
         Sheetflow::definition(key: 'products', definition: ColumnLimitImport::class);
 
-        $run = $this->uploadCsv("ID,name,price\nA-1,One,150\nB-2,Two,40\n");
+        $run = $this->uploadCsv(<<<'CSV'
+        ID,name,price
+        A-1,One,150
+        B-2,Two,40
+        CSV);
 
         $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
             ->assertOk()

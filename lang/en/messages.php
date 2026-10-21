@@ -16,7 +16,7 @@ return [
     'preview_heading' => '2. Preview',
     'sheet' => 'Sheet',
     'map_heading' => '3. Map columns',
-    'saved_template' => 'Saved template',
+    'saved_template' => 'Saved mapping',
     'choose' => 'Choose',
     'skip' => 'Skip',
     'field' => 'Field',
@@ -30,6 +30,7 @@ return [
     ],
     'template_name' => 'Template name',
     'save_mapping' => 'Save mapping',
+    'load_mapping' => 'Load mapping',
     'actions_heading' => '4. Validate and import',
     'validate' => 'Validate',
     'validated_ready' => 'Validation finished. All :valid rows are valid. You can import them.',
@@ -67,5 +68,6 @@ return [
         'unreadable_file' => 'The file ":filename" could not be read: :reason.',
         'duplicate_in_file' => 'The value in :field is repeated in the file.',
         'invalid_action' => 'That error action is not allowed for this field.',
+        'mapping_not_verified' => 'Save the mapping after validation finishes with no failed rows.',
     ],
 ];

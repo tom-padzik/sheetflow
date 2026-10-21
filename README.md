@@ -176,7 +176,7 @@ class ProductImport extends ImportDefinition
 
 `ImportDefinition::authorize()` is optional and separate from the fields. Return `true` to allow this import, `false` to refuse it, or `null` to defer to `Sheetflow::authorize()`. See [Who may import](#who-may-import).
 
-`ImportDefinition::saveTemplates()` is optional. Return `false` to hide saved maps for this import, `true` to keep them, or `null` to follow `sheetflow.save_templates`. The column dropdowns stay. Validate still sends the map shown on screen. `PUT /sheetflow/api/runs/{run}/mapping` with `save_template` returns 403 while the switch is off, for the global setting and for a definition that returns `false`.
+`ImportDefinition::saveTemplates()` is optional. Return `false` to hide saved maps for this import, `true` to keep them, or `null` to follow `sheetflow.save_templates`. The column dropdowns stay. Validate still sends the map shown on screen. The template name and **Save mapping** appear after validation finishes with no failed rows and the map still matches that check. When a later file has the same headers, choose a saved map and press **Load mapping** to fill the column dropdowns. `PUT /sheetflow/api/runs/{run}/mapping` with `save_template` returns 403 while the switch is off, and 409 until that validation has passed.
 
 `validateRow()` is optional. It runs after the field rules, during validation and again before each row is written. Return field names mapped to message lists. An empty array accepts the row. Both sets of messages are kept.
 
@@ -273,7 +273,7 @@ protected function persist(MappedRow $row): void
 
 1. **Upload.** The file is stored on the private disk. The response includes headers, sheet names, and about the first 20 data rows. Accepted extensions are `csv`, `txt`, `xls`, `xlsx`, and `ods`. CSV and TXT delimiters are detected from the first line (comma, semicolon, or tab). You can pass `delimiter` as one character. Encoding is UTF-8, and a leading BOM is skipped. The first sheet is used until the user picks another. `.xls` is loaded in full by PhpSpreadsheet; the other formats stay streamed.
 2. **Staging.** One queued job reads the file once and stores raw rows in `sheetflow_rows`. Later steps do not re-read the workbook.
-3. **Mapping.** The suggested map matches headers to field names, labels, and `guess()` values. Saving a template stores that map plus a signature of the header row. The next file with the same headers offers the template. The user still sees the map before continuing.
+3. **Mapping.** The suggested map matches headers to field names, labels, and `guess()` values. Saving a template stores that map plus a signature of the header row. The next file with the same headers lists that map, and **Load mapping** copies it into the column dropdowns. The user still sees the map before continuing.
 4. **Validation.** A queued batch checks every staged row and does not write models. Failures go to `sheetflow_failures` with the row number, raw values, and messages.
 5. **Import.** Only valid rows are written, in chunks of 100, through a job batch. Each row is validated again immediately before `persist()`, because the database may have changed. A thrown exception on one row is stored as a failure and the chunk continues.
 6. **Cancel.** Cancelling sets the run to `cancelled` and cancels the batch. The current chunk finishes, then the job stops. A cell is not rolled back mid-write.
@@ -419,7 +419,7 @@ Publishing again with `--force` replaces the copies, including local edits.
 | `prefix` | `sheetflow` (`SHEETFLOW_PREFIX`) | URL prefix of the default group |
 | `middleware` | `['web', 'auth']` | Middleware for the default group and for `wizards` entries that do not set their own |
 | `allow_all` | `false` (`SHEETFLOW_ALLOW_ALL`) | Skip the import rule outside production. Ignored when `APP_ENV` is `production` |
-| `save_templates` | `true` (`SHEETFLOW_SAVE_TEMPLATES`) | Show the template name, save button, and saved maps. A definition's `saveTemplates()` overrides this |
+| `save_templates` | `true` (`SHEETFLOW_SAVE_TEMPLATES`) | Show saved maps. The template name and save button appear after validation finishes with no failed rows. A definition's `saveTemplates()` overrides this |
 | `register_routes` | `true` | Register the default group. Set `false` and call `Sheetflow::routes()` yourself |
 | `register_wizard` | `true` | Register `GET {prefix}/{definition}` inside that group |
 | `wizards` | `[]` | Extra Blade URIs keyed to definition keys |

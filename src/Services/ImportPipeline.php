@@ -250,7 +250,7 @@ class ImportPipeline
      */
     public function saveMapping(ImportRun $run, array $columnMap, bool $saveTemplate, ?string $templateName, array $invalidActions = []): ImportRun
     {
-        $this->assertStatus($run, RunStatus::staged, RunStatus::validated);
+        $this->assertStatus($run, RunStatus::staged, RunStatus::validated, RunStatus::completed, RunStatus::importing);
         $definition = $this->definitions->resolve($run->definition_key);
         $normalized = $this->normalizeMap(
             definition: $definition,
@@ -261,24 +261,47 @@ class ImportPipeline
             definition: $definition,
             actions: $invalidActions,
         );
+        $storedMap = $this->normalizeMap(
+            definition: $definition,
+            headers: $run->headers ?? [],
+            columnMap: $run->column_map ?? [],
+        );
+        $storedActions = $this->normalizeInvalidActions(
+            definition: $definition,
+            actions: $run->invalid_actions ?? [],
+        );
+        $unchanged = $this->sameMap(left: $storedMap, right: $normalized)
+            && $this->sameMap(left: $storedActions, right: $actions);
 
-        if (RunStatus::validated === $run->status) {
-            $run->rows()->update(['status' => RowStatus::pending->value]);
-            $run->failures()->delete();
+        if ($saveTemplate && (! $this->mappingVerified(run: $run) || ! $unchanged)) {
+            abort(409, __('sheetflow::messages.errors.mapping_not_verified'));
         }
 
-        $run->forceFill([
-            'column_map' => $normalized,
-            'invalid_actions' => $actions,
-            'stopped_row' => null,
-            'file_errors' => null,
-            'status' => RunStatus::staged,
-            'valid_rows' => 0,
-            'failed_rows' => 0,
-            'imported_rows' => 0,
-            'processed_rows' => 0,
-            'validated_at' => null,
-        ])->save();
+        if (! $unchanged) {
+            if (! in_array($run->status, [RunStatus::staged, RunStatus::validated], true)) {
+                abort(409, __('sheetflow::messages.errors.invalid_status', [
+                    'status' => __('sheetflow::messages.statuses.'.$run->status->value),
+                ]));
+            }
+
+            if (RunStatus::validated === $run->status) {
+                $run->rows()->update(['status' => RowStatus::pending->value]);
+                $run->failures()->delete();
+            }
+
+            $run->forceFill([
+                'column_map' => $normalized,
+                'invalid_actions' => $actions,
+                'stopped_row' => null,
+                'file_errors' => null,
+                'status' => RunStatus::staged,
+                'valid_rows' => 0,
+                'failed_rows' => 0,
+                'imported_rows' => 0,
+                'processed_rows' => 0,
+                'validated_at' => null,
+            ])->save();
+        }
 
         if ($saveTemplate && Sheetflow::savesTemplates(definition: $definition) && is_string($templateName) && '' !== $templateName) {
             $this->storeTemplate(
@@ -1222,6 +1245,27 @@ class ImportPipeline
             'filename' => $filename,
             'reason' => $reason,
         ]);
+    }
+
+    private function mappingVerified(ImportRun $run): bool
+    {
+        if (null !== $run->stopped_row || $run->failed_rows > 0 || $run->valid_rows < 1) {
+            return false;
+        }
+
+        return in_array($run->status, [RunStatus::validated, RunStatus::importing, RunStatus::completed], true);
+    }
+
+    /**
+     * @param  array<string, string|null>  $left
+     * @param  array<string, string|null>  $right
+     */
+    private function sameMap(array $left, array $right): bool
+    {
+        ksort($left);
+        ksort($right);
+
+        return $left == $right;
     }
 
     private function assertStatus(ImportRun $run, RunStatus ...$allowed): void

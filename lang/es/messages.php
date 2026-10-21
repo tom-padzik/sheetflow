@@ -16,7 +16,7 @@ return [
     'preview_heading' => '2. Vista previa',
     'sheet' => 'Hoja',
     'map_heading' => '3. Asignar columnas',
-    'saved_template' => 'Plantilla guardada',
+    'saved_template' => 'Asignación guardada',
     'choose' => 'Elegir',
     'skip' => 'Omitir',
     'field' => 'Campo',
@@ -30,6 +30,7 @@ return [
     ],
     'template_name' => 'Nombre de la plantilla',
     'save_mapping' => 'Guardar asignación',
+    'load_mapping' => 'Cargar asignación',
     'actions_heading' => '4. Validar e importar',
     'validate' => 'Validar',
     'validated_ready' => 'La validación ha terminado. Las :valid filas son válidas. Ya puedes importarlas.',
@@ -67,5 +68,6 @@ return [
         'unreadable_file' => 'No se pudo leer el archivo «:filename»: :reason.',
         'duplicate_in_file' => 'El valor del campo :field está repetido en el archivo.',
         'invalid_action' => 'Esa acción de error no está permitida para este campo.',
+        'mapping_not_verified' => 'Guarde la asignación cuando la validación termine sin filas fallidas.',
     ],
 ];

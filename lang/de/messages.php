@@ -16,7 +16,7 @@ return [
     'preview_heading' => '2. Vorschau',
     'sheet' => 'Blatt',
     'map_heading' => '3. Spalten zuordnen',
-    'saved_template' => 'Gespeicherte Vorlage',
+    'saved_template' => 'Gespeicherte Zuordnung',
     'choose' => 'Auswählen',
     'skip' => 'Überspringen',
     'field' => 'Feld',
@@ -30,6 +30,7 @@ return [
     ],
     'template_name' => 'Vorlagenname',
     'save_mapping' => 'Zuordnung speichern',
+    'load_mapping' => 'Zuordnung laden',
     'actions_heading' => '4. Prüfen und importieren',
     'validate' => 'Prüfen',
     'validated_ready' => 'Die Prüfung ist abgeschlossen. Alle :valid Zeilen sind gültig. Sie können sie importieren.',
@@ -67,5 +68,6 @@ return [
         'unreadable_file' => 'Die Datei „:filename“ konnte nicht gelesen werden: :reason.',
         'duplicate_in_file' => 'Der Wert im Feld :field kommt in der Datei mehrfach vor.',
         'invalid_action' => 'Diese Reaktion auf einen Fehler ist für dieses Feld nicht zulässig.',
+        'mapping_not_verified' => 'Speichern Sie die Zuordnung, nachdem die Prüfung ohne fehlerhafte Zeilen abgeschlossen ist.',
     ],
 ];

@@ -16,7 +16,7 @@ return [
     'preview_heading' => '2. Podgląd',
     'sheet' => 'Arkusz',
     'map_heading' => '3. Mapowanie kolumn',
-    'saved_template' => 'Zapisany szablon',
+    'saved_template' => 'Zapisane mapowanie',
     'choose' => 'Wybierz',
     'skip' => 'Pomiń',
     'field' => 'Pole',
@@ -30,6 +30,7 @@ return [
     ],
     'template_name' => 'Nazwa szablonu',
     'save_mapping' => 'Zapisz mapowanie',
+    'load_mapping' => 'Wczytaj mapowanie',
     'actions_heading' => '4. Sprawdzenie i import',
     'validate' => 'Sprawdź',
     'validated_ready' => 'Sprawdzanie zakończone. Wszystkie wiersze są poprawne (:valid). Możesz je zaimportować.',
@@ -67,5 +68,6 @@ return [
         'unreadable_file' => 'Nie udało się odczytać pliku „:filename”: :reason.',
         'duplicate_in_file' => 'Wartość w polu :field powtarza się w pliku.',
         'invalid_action' => 'Ta reakcja na błąd nie jest dozwolona dla tego pola.',
+        'mapping_not_verified' => 'Zapisz mapowanie dopiero wtedy, gdy sprawdzanie zakończy się bez błędnych wierszy.',
     ],
 ];

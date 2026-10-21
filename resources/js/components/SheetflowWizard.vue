@@ -38,13 +38,16 @@
 
         <section v-if="run && mapped">
             <h2>{{ text('map_heading') }}</h2>
-            <label v-if="run.save_templates !== false && run.templates.length">
-                {{ text('saved_template') }}
-                <select @change="applyTemplate">
-                    <option value="">{{ text('choose') }}</option>
-                    <option v-for="template in run.templates" :key="template.id" :value="template.id">{{ template.name }}</option>
-                </select>
-            </label>
+            <div v-if="run.save_templates !== false && run.templates.length" class="row">
+                <label>
+                    {{ text('saved_template') }}
+                    <select v-model="selectedTemplate">
+                        <option value="">{{ text('choose') }}</option>
+                        <option v-for="template in run.templates" :key="template.id" :value="String(template.id)">{{ template.name }}</option>
+                    </select>
+                </label>
+                <button type="button" :disabled="selectedTemplate === ''" @click="loadMapping">{{ text('load_mapping') }}</button>
+            </div>
             <table>
                 <thead>
                     <tr>
@@ -71,11 +74,11 @@
                     </tr>
                 </tbody>
             </table>
-            <label v-if="run.save_templates !== false">
+            <label v-if="canSaveMapping">
                 {{ text('template_name') }}
                 <input v-model="templateName" type="text" maxlength="255">
             </label>
-            <button v-if="run.save_templates !== false" type="button" @click="saveMapping">{{ text('save_mapping') }}</button>
+            <button v-if="canSaveMapping" type="button" @click="saveMapping">{{ text('save_mapping') }}</button>
         </section>
 
         <section v-if="run">
@@ -135,6 +138,7 @@ const file = ref(null);
 const columnMap = ref({});
 const invalidActions = ref({});
 const templateName = ref('');
+const selectedTemplate = ref('');
 const failures = ref([]);
 const error = ref('');
 let timer = null;
@@ -142,6 +146,16 @@ let timer = null;
 const busy = computed(() => run.value && ['staging', 'validating', 'importing'].includes(run.value.status));
 const mapped = computed(() => run.value && !['staging', 'uploaded'].includes(run.value.status));
 const choosesAction = computed(() => (run.value?.fields || []).some((field) => (field.allowed_invalid_actions || []).length > 1));
+const canSaveMapping = computed(() => {
+    const current = run.value;
+
+    if (!current || current.save_templates === false || !mappingVerified(current)) {
+        return false;
+    }
+
+    return sameRecord(columnMap.value, current.column_map || {})
+        && sameRecord(currentInvalidActions(), current.invalid_actions || {});
+});
 
 watch(run, (value) => {
     if (!value) {
@@ -157,6 +171,28 @@ watch(run, (value) => {
         failures.value = [];
     }
 });
+
+function mappingVerified(current) {
+    return ['validated', 'importing', 'completed'].includes(current.status)
+        && !current.stopped_row
+        && current.failed_rows === 0
+        && current.valid_rows > 0;
+}
+
+function sameRecord(left, right) {
+    const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+
+    for (const key of keys) {
+        const current = left[key] ?? null;
+        const verified = right[key] ?? null;
+
+        if ((current === '' ? null : current) !== (verified === '' ? null : verified)) {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 function text(path) {
     const value = path.split('.').reduce((carry, key) => {
@@ -296,13 +332,29 @@ async function changeSheet(event) {
     }
 }
 
-function applyTemplate(event) {
-    const template = run.value.templates.find((item) => String(item.id) === event.target.value);
+function loadMapping() {
+    const template = run.value.templates.find((item) => String(item.id) === selectedTemplate.value);
 
-    if (template) {
-        columnMap.value = { ...template.column_map };
-        invalidActions.value = { ...(template.invalid_actions || invalidActions.value) };
+    if (!template) {
+        return;
     }
+
+    const headers = new Set(run.value.headers || []);
+    const map = {};
+
+    (run.value.fields || []).forEach((field) => {
+        const header = template.column_map?.[field.name] ?? null;
+
+        map[field.name] = header && headers.has(header) ? header : null;
+    });
+    columnMap.value = map;
+
+    const actions = { ...invalidActions.value };
+
+    Object.entries(template.invalid_actions || {}).forEach(([name, action]) => {
+        actions[name] = action;
+    });
+    invalidActions.value = actions;
 }
 
 async function saveMapping() {

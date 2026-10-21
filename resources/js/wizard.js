@@ -99,8 +99,11 @@
 
         document.getElementById('sheetflow-upload')?.addEventListener('submit', onUpload);
         document.getElementById('sheetflow-sheet')?.addEventListener('change', onSheet);
-        document.getElementById('sheetflow-template')?.addEventListener('change', onTemplate);
+        document.getElementById('sheetflow-load-map')?.addEventListener('click', onLoadMap);
         document.getElementById('sheetflow-save-map')?.addEventListener('click', onSaveMap);
+        document.querySelectorAll('[data-field], [data-invalid-action]').forEach((select) => {
+            select.addEventListener('change', refreshSaveControls);
+        });
         document.getElementById('sheetflow-validate')?.addEventListener('click', onValidate);
         document.getElementById('sheetflow-import')?.addEventListener('click', onImport);
         document.getElementById('sheetflow-cancel')?.addEventListener('click', onCancel);
@@ -167,13 +170,28 @@
         const templates = saveTemplates
             ? (run.templates || []).map((template) => `<option value="${template.id}">${escapeHtml(template.name)}</option>`).join('')
             : '';
+        const loadControls = saveTemplates && templates
+            ? [
+                '<div class="row">',
+                `<label>${escapeHtml(t('saved_template'))}<select id="sheetflow-template"><option value="">${escapeHtml(t('choose'))}</option>${templates}</select></label>`,
+                `<button type="button" id="sheetflow-load-map">${escapeHtml(t('load_mapping'))}</button>`,
+                '</div>',
+            ].join('')
+            : '';
+        const saveControls = saveTemplates && mappingVerified()
+            ? [
+                `<div id="sheetflow-save-controls">`,
+                `<label>${escapeHtml(t('template_name'))}<input id="sheetflow-template-name" type="text" maxlength="255"></label>`,
+                `<div class="row"><button type="button" id="sheetflow-save-map">${escapeHtml(t('save_mapping'))}</button></div>`,
+                '</div>',
+            ].join('')
+            : '';
 
         return [
             `<section><h2>${escapeHtml(t('map_heading'))}</h2>`,
-            saveTemplates && templates ? `<label>${escapeHtml(t('saved_template'))}<select id="sheetflow-template"><option value="">${escapeHtml(t('choose'))}</option>${templates}</select></label>` : '',
+            saveTemplates && templates ? loadControls : '',
             `<table><thead><tr><th>${escapeHtml(t('field'))}</th><th>${escapeHtml(t('file_column'))}</th>${choosesAction ? `<th>${escapeHtml(t('on_error'))}</th>` : ''}</tr></thead><tbody>${rows}</tbody></table>`,
-            saveTemplates ? `<label>${escapeHtml(t('template_name'))}<input id="sheetflow-template-name" type="text" maxlength="255"></label>` : '',
-            saveTemplates ? `<div class="row"><button type="button" id="sheetflow-save-map">${escapeHtml(t('save_mapping'))}</button></div>` : '',
+            saveControls,
             '</section>',
         ].join('');
     }
@@ -189,6 +207,44 @@
             importNotice(),
             '</section>',
         ].join('');
+    }
+
+    function mappingVerified() {
+        return !!run
+            && ['validated', 'importing', 'completed'].includes(run.status)
+            && !run.stopped_row
+            && run.failed_rows === 0
+            && run.valid_rows > 0;
+    }
+
+    function formMatchesVerified() {
+        return sameRecord(currentMap(), run.column_map || {})
+            && sameRecord(currentInvalidActions(), run.invalid_actions || {});
+    }
+
+    function sameRecord(left, right) {
+        const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+
+        for (const key of keys) {
+            const current = left[key] ?? null;
+            const verified = right[key] ?? null;
+
+            if ((current === '' ? null : current) !== (verified === '' ? null : verified)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function refreshSaveControls() {
+        const controls = document.getElementById('sheetflow-save-controls');
+
+        if (!controls) {
+            return;
+        }
+
+        controls.hidden = !formMatchesVerified();
     }
 
     function validationNotice() {
@@ -272,13 +328,6 @@
         return map;
     }
 
-    function applyMapToSelects() {
-        document.querySelectorAll('[data-field]').forEach((select) => {
-            const value = run.column_map[select.dataset.field] ?? '';
-            select.value = value ?? '';
-        });
-    }
-
     async function onUpload(event) {
         event.preventDefault();
         const form = new FormData(event.target);
@@ -311,23 +360,28 @@
         }
     }
 
-    function onTemplate(event) {
-        const template = (run.templates || []).find((item) => String(item.id) === event.target.value);
+    function onLoadMap() {
+        const selected = document.getElementById('sheetflow-template')?.value ?? '';
+        const template = (run.templates || []).find((item) => String(item.id) === selected);
+        const headers = new Set(run.headers || []);
 
         if (!template) {
             return;
         }
 
-        run.column_map = template.column_map;
-        run.invalid_actions = template.invalid_actions || run.invalid_actions;
-        applyMapToSelects();
-        document.querySelectorAll('[data-invalid-action]').forEach((select) => {
-            const value = (run.invalid_actions || {})[select.dataset.invalidAction];
+        document.querySelectorAll('[data-field]').forEach((select) => {
+            const header = template.column_map?.[select.dataset.field] ?? '';
 
-            if (value) {
+            select.value = headers.has(header) ? header : '';
+        });
+        document.querySelectorAll('[data-invalid-action]').forEach((select) => {
+            const value = (template.invalid_actions || {})[select.dataset.invalidAction];
+
+            if (value && [...select.options].some((option) => option.value === value)) {
                 select.value = value;
             }
         });
+        refreshSaveControls();
     }
 
     async function onSaveMap() {
