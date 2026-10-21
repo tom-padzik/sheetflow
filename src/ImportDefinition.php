@@ -27,6 +27,14 @@ abstract class ImportDefinition
         return null;
     }
 
+    /**
+     * Return true to offer saved maps, false to hide them, or null to follow sheetflow.save_templates.
+     */
+    public function saveTemplates(): ?bool
+    {
+        return null;
+    }
+
     final public function handle(MappedRow $row): void
     {
         $this->beforePersist($row);

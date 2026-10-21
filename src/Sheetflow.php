@@ -36,6 +36,20 @@ class Sheetflow
         app(ImportGate::class)->set($authorizer);
     }
 
+    /**
+     * Decide whether this import may store and list named column maps.
+     */
+    public static function savesTemplates(ImportDefinition $definition): bool
+    {
+        $choice = $definition->saveTemplates();
+
+        if (null !== $choice) {
+            return $choice;
+        }
+
+        return (bool) config('sheetflow.save_templates', true);
+    }
+
     public static function wizard(string $definition): View
     {
         return app(WizardController::class)->show($definition);

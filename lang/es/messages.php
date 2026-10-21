@@ -28,6 +28,8 @@ return [
     'validated_ready' => 'La validación ha terminado. Las :valid filas son válidas. Ya puedes importarlas.',
     'validated_partial' => 'La validación ha terminado. :valid filas son válidas y :failed han fallado.',
     'import_valid' => 'Importar filas válidas',
+    'imported_ready' => 'La importación ha terminado. Las :imported filas se han importado.',
+    'imported_partial' => 'La importación ha terminado. :imported filas se han importado y :failed han fallado.',
     'row_errors' => 'Errores de fila',
     'row' => 'Fila',
     'error' => 'Error',

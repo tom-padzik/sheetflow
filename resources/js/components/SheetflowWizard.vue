@@ -14,14 +14,6 @@
             </form>
         </section>
 
-        <section v-if="run">
-            <h2>{{ text('progress') }}</h2>
-            <p class="meta">{{ run.filename }} · {{ text('statuses.' + run.status) }} · {{ run.processed_rows }} / {{ run.total_rows }}</p>
-            <div class="progress"><span :style="{ width: run.percent + '%' }"></span></div>
-            <p class="meta">{{ text('valid') }} {{ run.valid_rows }} · {{ text('failed') }} {{ run.failed_rows }} · {{ text('imported') }} {{ run.imported_rows }}</p>
-            <button v-if="busy" class="danger" type="button" @click="cancel">{{ text('cancel') }}</button>
-        </section>
-
         <section v-if="run && run.headers.length">
             <h2>{{ text('preview_heading') }}</h2>
             <label v-if="run.sheet_names.length > 1">
@@ -46,7 +38,7 @@
 
         <section v-if="run && mapped">
             <h2>{{ text('map_heading') }}</h2>
-            <label v-if="run.templates.length">
+            <label v-if="run.save_templates !== false && run.templates.length">
                 {{ text('saved_template') }}
                 <select @change="applyTemplate">
                     <option value="">{{ text('choose') }}</option>
@@ -72,11 +64,19 @@
                     </tr>
                 </tbody>
             </table>
-            <label>
+            <label v-if="run.save_templates !== false">
                 {{ text('template_name') }}
                 <input v-model="templateName" type="text" maxlength="255">
             </label>
-            <button type="button" @click="saveMapping">{{ text('save_mapping') }}</button>
+            <button v-if="run.save_templates !== false" type="button" @click="saveMapping">{{ text('save_mapping') }}</button>
+        </section>
+
+        <section v-if="run">
+            <h2>{{ text('progress') }}</h2>
+            <p class="meta">{{ run.filename }} · {{ text('statuses.' + run.status) }} · {{ run.processed_rows }} / {{ run.total_rows }}</p>
+            <div class="progress"><span :style="{ width: run.percent + '%' }"></span></div>
+            <p class="meta">{{ text('valid') }} {{ run.valid_rows }} · {{ text('failed') }} {{ run.failed_rows }} · {{ text('imported') }} {{ run.imported_rows }}</p>
+            <button v-if="busy" class="danger" type="button" @click="cancel">{{ text('cancel') }}</button>
         </section>
 
         <section v-if="run">
@@ -86,6 +86,7 @@
                 <button type="button" :disabled="run.status !== 'validated' || run.valid_rows < 1" @click="importRows">{{ text('import_valid') }}</button>
             </div>
             <p v-if="run.status === 'validated'" class="notice">{{ validationNotice }}</p>
+            <p v-if="run.status === 'completed'" class="notice">{{ importNotice }}</p>
         </section>
 
         <section v-if="failures.length">
@@ -178,6 +179,19 @@ const validationNotice = computed(() => {
 
     return fill(key, {
         valid: run.value.valid_rows,
+        failed: run.value.failed_rows,
+    });
+});
+
+const importNotice = computed(() => {
+    if (!run.value || run.value.status !== 'completed') {
+        return '';
+    }
+
+    const key = run.value.failed_rows > 0 ? 'imported_partial' : 'imported_ready';
+
+    return fill(key, {
+        imported: run.value.imported_rows,
         failed: run.value.failed_rows,
     });
 });

@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Tpadzik\Sheetflow\Exceptions\UnknownDefinitionException;
 use Tpadzik\Sheetflow\Models\MappingTemplate;
+use Tpadzik\Sheetflow\Sheetflow;
 use Tpadzik\Sheetflow\Support\DefinitionRegistry;
 
 class TemplateController extends SheetflowController
@@ -19,12 +20,16 @@ class TemplateController extends SheetflowController
     public function index(Request $request, string $definition): JsonResponse
     {
         try {
-            $this->definitions->resolve($definition);
+            $import = $this->definitions->resolve($definition);
         } catch (UnknownDefinitionException) {
             abort(404);
         }
 
         $this->authorizeDefinition($definition);
+
+        if (! Sheetflow::savesTemplates(definition: $import)) {
+            return response()->json(['data' => []]);
+        }
 
         $signature = $request->string('header_signature')->toString();
         $query = MappingTemplate::query()->where('definition_key', $definition);

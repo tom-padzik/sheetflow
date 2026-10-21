@@ -28,6 +28,8 @@ return [
     'validated_ready' => 'Die Prüfung ist abgeschlossen. Alle :valid Zeilen sind gültig. Sie können sie importieren.',
     'validated_partial' => 'Die Prüfung ist abgeschlossen. :valid Zeilen sind gültig, :failed sind fehlgeschlagen.',
     'import_valid' => 'Gültige Zeilen importieren',
+    'imported_ready' => 'Der Import ist abgeschlossen. Alle :imported Zeilen wurden importiert.',
+    'imported_partial' => 'Der Import ist abgeschlossen. :imported Zeilen wurden importiert, :failed sind fehlgeschlagen.',
     'row_errors' => 'Zeilenfehler',
     'row' => 'Zeile',
     'error' => 'Fehler',

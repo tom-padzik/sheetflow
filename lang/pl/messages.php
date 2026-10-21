@@ -28,6 +28,8 @@ return [
     'validated_ready' => 'Sprawdzanie zakończone. Wszystkie wiersze są poprawne (:valid). Możesz je zaimportować.',
     'validated_partial' => 'Sprawdzanie zakończone. Poprawnych wierszy: :valid, błędnych: :failed.',
     'import_valid' => 'Importuj poprawne wiersze',
+    'imported_ready' => 'Import zakończony. Wszystkie wiersze zostały zaimportowane (:imported).',
+    'imported_partial' => 'Import zakończony. Zaimportowanych wierszy: :imported, błędnych: :failed.',
     'row_errors' => 'Błędy wierszy',
     'row' => 'Wiersz',
     'error' => 'Błąd',

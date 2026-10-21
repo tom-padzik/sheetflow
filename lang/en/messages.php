@@ -28,6 +28,8 @@ return [
     'validated_ready' => 'Validation finished. All :valid rows are valid. You can import them.',
     'validated_partial' => 'Validation finished. :valid rows are valid and :failed rows failed.',
     'import_valid' => 'Import valid rows',
+    'imported_ready' => 'Import finished. All :imported rows were imported.',
+    'imported_partial' => 'Import finished. :imported rows were imported and :failed rows failed.',
     'row_errors' => 'Row errors',
     'row' => 'Row',
     'error' => 'Error',

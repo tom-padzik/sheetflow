@@ -174,6 +174,8 @@ class ProductImport extends ImportDefinition
 
 `ImportDefinition::authorize()` is optional and separate from the fields. Return `true` to allow this import, `false` to refuse it, or `null` to defer to `Sheetflow::authorize()`. See [Who may import](#who-may-import).
 
+`ImportDefinition::saveTemplates()` is optional. Return `false` to hide saved maps for this import, `true` to keep them, or `null` to follow `sheetflow.save_templates`. The column dropdowns stay. Validate still sends the map shown on screen. `PUT /sheetflow/api/runs/{run}/mapping` with `save_template` returns 403 while the switch is off, for the global setting and for a definition that returns `false`.
+
 `handle()` is final. For every valid row it calls `beforePersist()`, then `persist()`, then `afterPersist()`. Validation always runs before `handle()`.
 
 The default `persist()` calls `updateOrCreate()` on the `matchOn()` attributes. With no `matchOn()` fields, or when those values are absent from the row, it calls `create()`.
@@ -252,7 +254,7 @@ The upload response is `201` and the run payload. Mapping body:
 
 A `null` or empty header skips that field. Sheet body: `{"sheet": "Prices"}`.
 
-The run payload includes `id`, `definition`, `status`, `filename`, `format`, `delimiter`, `sheet`, `headers`, `sheet_names`, `preview_rows`, `column_map`, `fields` (`name`, `label`, `required`), `templates` (`id`, `name`, `column_map`), `total_rows`, `processed_rows`, `valid_rows`, `failed_rows`, `imported_rows`, and `percent`.
+The run payload includes `id`, `definition`, `status`, `filename`, `format`, `delimiter`, `sheet`, `headers`, `sheet_names`, `preview_rows`, `column_map`, `fields` (`name`, `label`, `required`), `save_templates`, `templates` (`id`, `name`, `column_map`), `total_rows`, `processed_rows`, `valid_rows`, `failed_rows`, `imported_rows`, and `percent`. `save_templates` is false when named maps are hidden, and `templates` is then empty.
 
 Failures look like this:
 
@@ -275,9 +277,9 @@ An unknown definition returns 404. A definition the current user may not open re
 
 ## Blade wizard
 
-The package route renders a full page and polls the run while its status is `staging`, `validating`, or `importing`. The page does not need Vite or Tailwind. Its stylesheet and script are package routes.
+The package route renders a full page and polls the run while its status is `staging`, `validating`, or `importing`. The page does not need Vite or Tailwind. Its stylesheet and script are package routes. The progress card sits directly above the validate and import buttons.
 
-When validation finishes, the page states how many rows are valid and how many failed. If every row is valid, it also says they can be imported. Validate sends the column map currently shown in the form, so the check uses that map rather than the last one saved with **Save mapping**.
+When validation finishes, the page states how many rows are valid and how many failed. If every row is valid, it also says they can be imported. Validate sends the column map currently shown in the form, so the check uses that map rather than the last one saved with **Save mapping**. When the import finishes, the same place under the buttons states how many rows were imported. If some rows failed, it includes that count too.
 
 ## Vue 3
 
@@ -346,6 +348,7 @@ Publishing again with `--force` replaces the copies, including local edits.
 | `prefix` | `sheetflow` (`SHEETFLOW_PREFIX`) | URL prefix of the default group |
 | `middleware` | `['web', 'auth']` | Middleware for the default group and for `wizards` entries that do not set their own |
 | `allow_all` | `false` (`SHEETFLOW_ALLOW_ALL`) | Skip the import rule outside production. Ignored when `APP_ENV` is `production` |
+| `save_templates` | `true` (`SHEETFLOW_SAVE_TEMPLATES`) | Show the template name, save button, and saved maps. A definition's `saveTemplates()` overrides this |
 | `register_routes` | `true` | Register the default group. Set `false` and call `Sheetflow::routes()` yourself |
 | `register_wizard` | `true` | Register `GET {prefix}/{definition}` inside that group |
 | `wizards` | `[]` | Extra Blade URIs keyed to definition keys |

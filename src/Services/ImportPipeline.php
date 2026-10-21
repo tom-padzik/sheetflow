@@ -25,6 +25,7 @@ use Tpadzik\Sheetflow\Models\ImportFailure;
 use Tpadzik\Sheetflow\Models\ImportRow;
 use Tpadzik\Sheetflow\Models\ImportRun;
 use Tpadzik\Sheetflow\Models\MappingTemplate;
+use Tpadzik\Sheetflow\Sheetflow;
 use Tpadzik\Sheetflow\Support\ColumnGuesser;
 use Tpadzik\Sheetflow\Support\DefinitionRegistry;
 use Tpadzik\Sheetflow\Support\HeaderSignature;
@@ -266,7 +267,7 @@ class ImportPipeline
             'validated_at' => null,
         ])->save();
 
-        if ($saveTemplate && is_string($templateName) && '' !== $templateName) {
+        if ($saveTemplate && Sheetflow::savesTemplates(definition: $definition) && is_string($templateName) && '' !== $templateName) {
             $this->storeTemplate(
                 run: $run,
                 name: $templateName,
@@ -537,6 +538,7 @@ class ImportPipeline
     public function present(ImportRun $run): array
     {
         $definition = $this->definitions->resolve($run->definition_key);
+        $saveTemplates = Sheetflow::savesTemplates(definition: $definition);
         $total = (int) $run->total_rows;
         $processed = (int) $run->processed_rows;
 
@@ -560,7 +562,8 @@ class ImportPipeline
                 ],
                 $definition->fields(),
             ),
-            'templates' => $this->templatesFor($run),
+            'save_templates' => $saveTemplates,
+            'templates' => $saveTemplates ? $this->templatesFor($run) : [],
             'total_rows' => $total,
             'processed_rows' => $processed,
             'valid_rows' => (int) $run->valid_rows,

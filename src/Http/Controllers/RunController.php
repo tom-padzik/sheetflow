@@ -12,6 +12,7 @@ use Tpadzik\Sheetflow\Http\Requests\UpdateMappingRequest;
 use Tpadzik\Sheetflow\Http\Requests\UploadImportRequest;
 use Tpadzik\Sheetflow\Models\ImportRun;
 use Tpadzik\Sheetflow\Services\ImportPipeline;
+use Tpadzik\Sheetflow\Sheetflow;
 use Tpadzik\Sheetflow\Support\DefinitionRegistry;
 
 class RunController extends SheetflowController
@@ -55,6 +56,12 @@ class RunController extends SheetflowController
     public function updateMapping(UpdateMappingRequest $request, ImportRun $run): JsonResponse
     {
         $this->authorizeRun($run);
+
+        $definition = $this->definitions->resolve($run->definition_key);
+
+        if ($request->boolean('save_template') && ! Sheetflow::savesTemplates(definition: $definition)) {
+            abort(403);
+        }
 
         /** @var array<string, string|null> $columnMap */
         $columnMap = $request->input('column_map', []);

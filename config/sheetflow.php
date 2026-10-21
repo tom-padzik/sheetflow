@@ -35,6 +35,18 @@ return [
 
     'allow_all' => env('SHEETFLOW_ALLOW_ALL', false),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Saved maps
+    |--------------------------------------------------------------------------
+    |
+    | SHEETFLOW_SAVE_TEMPLATES shows the template name, the save button, and
+    | previously saved maps. A definition can override this with saveTemplates().
+    |
+    */
+
+    'save_templates' => filter_var(env('SHEETFLOW_SAVE_TEMPLATES', true), FILTER_VALIDATE_BOOLEAN),
+
     'register_routes' => true,
 
     'register_wizard' => true,

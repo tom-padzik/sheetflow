@@ -19,6 +19,8 @@ use Tpadzik\Sheetflow\Sheetflow;
 use Tpadzik\Sheetflow\Tests\Fixtures\CustomProductImport;
 use Tpadzik\Sheetflow\Tests\Fixtures\Product;
 use Tpadzik\Sheetflow\Tests\Fixtures\ProductImport;
+use Tpadzik\Sheetflow\Tests\Fixtures\TemplatesDisabledImport;
+use Tpadzik\Sheetflow\Tests\Fixtures\TemplatesEnabledImport;
 use Tpadzik\Sheetflow\Tests\Fixtures\User;
 use Tpadzik\Sheetflow\Tests\TestCase;
 
@@ -360,6 +362,68 @@ class ImportFlowTest extends TestCase
         $this->assertSame('cancelled', $cancelled['status']);
         $this->assertTrue(Bus::findBatch($batchId)?->cancelled());
         $this->assertSame(0, Product::query()->count());
+    }
+
+    #[Test]
+    public function test_hides_saved_maps_when_the_setting_is_off(): void
+    {
+        config(['sheetflow.save_templates' => false]);
+
+        $run = $this->uploadCsv("kod,name,price\nA-1,Widget,2\n");
+
+        $this->assertFalse($run['save_templates']);
+
+        $this->putJson(route('sheetflow.runs.mapping', ['run' => $run['id']]), [
+            'column_map' => $run['column_map'],
+            'save_template' => true,
+            'template_name' => 'Shop',
+        ])->assertForbidden();
+
+        $second = $this->uploadCsv("kod,name,price\nB-2,Other,3\n");
+
+        $this->assertSame([], $second['templates']);
+    }
+
+    #[Test]
+    public function test_hides_saved_maps_when_the_definition_refuses_them(): void
+    {
+        Sheetflow::definition(key: 'products', definition: TemplatesDisabledImport::class);
+
+        $run = $this->uploadCsv("kod,name,price\nA-1,Widget,2\n");
+
+        $this->assertFalse($run['save_templates']);
+
+        $this->putJson(route('sheetflow.runs.mapping', ['run' => $run['id']]), [
+            'column_map' => $run['column_map'],
+            'save_template' => true,
+            'template_name' => 'Shop',
+        ])->assertForbidden();
+
+        $second = $this->uploadCsv("kod,name,price\nB-2,Other,3\n");
+
+        $this->assertSame([], $second['templates']);
+    }
+
+    #[Test]
+    public function test_keeps_saved_maps_when_the_definition_allows_them(): void
+    {
+        config(['sheetflow.save_templates' => false]);
+        Sheetflow::definition(key: 'products', definition: TemplatesEnabledImport::class);
+
+        $first = $this->uploadCsv("kod,name,price\nA-1,Widget,2\n");
+
+        $this->assertTrue($first['save_templates']);
+
+        $this->putJson(route('sheetflow.runs.mapping', ['run' => $first['id']]), [
+            'column_map' => $first['column_map'],
+            'save_template' => true,
+            'template_name' => 'Shop',
+        ])->assertOk();
+
+        $second = $this->uploadCsv("kod,name,price\nB-2,Other,3\n");
+
+        $this->assertCount(1, $second['templates']);
+        $this->assertSame('Shop', $second['templates'][0]['name']);
     }
 
     /**

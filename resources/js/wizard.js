@@ -89,9 +89,9 @@
     function render() {
         app.innerHTML = [
             uploadSection(),
-            run ? statusSection() : '',
             run && run.headers.length ? previewSection() : '',
             run && run.status !== 'staging' && run.status !== 'uploaded' ? mappingSection() : '',
+            run ? statusSection() : '',
             run ? actionsSection() : '',
             '<div id="sheetflow-failures"></div>',
             '<p class="error" id="sheetflow-error"></p>',
@@ -161,14 +161,17 @@
 
             return `<tr><td>${escapeHtml(field.label)}${field.required ? ' *' : ''}</td><td>${select}</td></tr>`;
         }).join('');
-        const templates = (run.templates || []).map((template) => `<option value="${template.id}">${escapeHtml(template.name)}</option>`).join('');
+        const saveTemplates = run.save_templates !== false;
+        const templates = saveTemplates
+            ? (run.templates || []).map((template) => `<option value="${template.id}">${escapeHtml(template.name)}</option>`).join('')
+            : '';
 
         return [
             `<section><h2>${escapeHtml(t('map_heading'))}</h2>`,
-            templates ? `<label>${escapeHtml(t('saved_template'))}<select id="sheetflow-template"><option value="">${escapeHtml(t('choose'))}</option>${templates}</select></label>` : '',
+            saveTemplates && templates ? `<label>${escapeHtml(t('saved_template'))}<select id="sheetflow-template"><option value="">${escapeHtml(t('choose'))}</option>${templates}</select></label>` : '',
             `<table><thead><tr><th>${escapeHtml(t('field'))}</th><th>${escapeHtml(t('file_column'))}</th></tr></thead><tbody>${rows}</tbody></table>`,
-            `<label>${escapeHtml(t('template_name'))}<input id="sheetflow-template-name" type="text" maxlength="255"></label>`,
-            `<div class="row"><button type="button" id="sheetflow-save-map">${escapeHtml(t('save_mapping'))}</button></div>`,
+            saveTemplates ? `<label>${escapeHtml(t('template_name'))}<input id="sheetflow-template-name" type="text" maxlength="255"></label>` : '',
+            saveTemplates ? `<div class="row"><button type="button" id="sheetflow-save-map">${escapeHtml(t('save_mapping'))}</button></div>` : '',
             '</section>',
         ].join('');
     }
@@ -181,6 +184,7 @@
             '<button type="button" id="sheetflow-import" ' + (run.status === 'validated' && run.valid_rows > 0 ? '' : 'disabled') + `>${escapeHtml(t('import_valid'))}</button>`,
             '</div>',
             validationNotice(),
+            importNotice(),
             '</section>',
         ].join('');
     }
@@ -194,6 +198,19 @@
 
         return `<p class="notice">${escapeHtml(fill(key, {
             valid: run.valid_rows,
+            failed: run.failed_rows,
+        }))}</p>`;
+    }
+
+    function importNotice() {
+        if (!run || run.status !== 'completed') {
+            return '';
+        }
+
+        const key = run.failed_rows > 0 ? 'imported_partial' : 'imported_ready';
+
+        return `<p class="notice">${escapeHtml(fill(key, {
+            imported: run.imported_rows,
             failed: run.failed_rows,
         }))}</p>`;
     }
