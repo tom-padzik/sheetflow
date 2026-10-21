@@ -21,6 +21,13 @@ return [
     'skip' => 'Omitir',
     'field' => 'Campo',
     'file_column' => 'Columna del archivo',
+    'on_error' => 'Si hay un error',
+    'import_stopped' => 'La importación se detuvo en la fila :row. No se ha importado ninguna fila.',
+    'invalid_actions' => [
+        'skip_row' => 'Omitir fila',
+        'null' => 'Dejar vacío',
+        'stop' => 'Detener la importación',
+    ],
     'template_name' => 'Nombre de la plantilla',
     'save_mapping' => 'Guardar asignación',
     'actions_heading' => '4. Validar e importar',
@@ -58,5 +65,7 @@ return [
         'unsupported_format' => 'El formato [:format] no está admitido.',
         'unreadable' => 'No se pudo leer la hoja de cálculo.',
         'unreadable_file' => 'No se pudo leer el archivo «:filename»: :reason.',
+        'duplicate_in_file' => 'El valor del campo :field está repetido en el archivo.',
+        'invalid_action' => 'Esa acción de error no está permitida para este campo.',
     ],
 ];

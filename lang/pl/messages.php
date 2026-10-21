@@ -21,6 +21,13 @@ return [
     'skip' => 'Pomiń',
     'field' => 'Pole',
     'file_column' => 'Kolumna pliku',
+    'on_error' => 'Przy błędzie',
+    'import_stopped' => 'Import przerwany na wierszu :row. Żaden wiersz nie został zaimportowany.',
+    'invalid_actions' => [
+        'skip_row' => 'Pomiń wiersz',
+        'null' => 'Zapisz puste',
+        'stop' => 'Przerwij import',
+    ],
     'template_name' => 'Nazwa szablonu',
     'save_mapping' => 'Zapisz mapowanie',
     'actions_heading' => '4. Sprawdzenie i import',
@@ -58,5 +65,7 @@ return [
         'unsupported_format' => 'Format [:format] nie jest obsługiwany.',
         'unreadable' => 'Nie udało się odczytać arkusza.',
         'unreadable_file' => 'Nie udało się odczytać pliku „:filename”: :reason.',
+        'duplicate_in_file' => 'Wartość w polu :field powtarza się w pliku.',
+        'invalid_action' => 'Ta reakcja na błąd nie jest dozwolona dla tego pola.',
     ],
 ];

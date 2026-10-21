@@ -148,6 +148,7 @@
     }
 
     function mappingSection() {
+        const choosesAction = (run.fields || []).some((field) => (field.allowed_invalid_actions || []).length > 1);
         const rows = run.fields.map((field) => {
             const selected = run.column_map[field.name] ?? '';
             const options = [`<option value="">${escapeHtml(t('skip'))}</option>`].concat(
@@ -158,8 +159,9 @@
                 }),
             ).join('');
             const select = `<select data-field="${escapeHtml(field.name)}">${options}</select>`;
+            const actionCell = choosesAction ? `<td>${invalidActionControl(field)}</td>` : '';
 
-            return `<tr><td>${escapeHtml(field.label)}${field.required ? ' *' : ''}</td><td>${select}</td></tr>`;
+            return `<tr><td>${escapeHtml(field.label)}${field.required ? ' *' : ''}</td><td>${select}</td>${actionCell}</tr>`;
         }).join('');
         const saveTemplates = run.save_templates !== false;
         const templates = saveTemplates
@@ -169,7 +171,7 @@
         return [
             `<section><h2>${escapeHtml(t('map_heading'))}</h2>`,
             saveTemplates && templates ? `<label>${escapeHtml(t('saved_template'))}<select id="sheetflow-template"><option value="">${escapeHtml(t('choose'))}</option>${templates}</select></label>` : '',
-            `<table><thead><tr><th>${escapeHtml(t('field'))}</th><th>${escapeHtml(t('file_column'))}</th></tr></thead><tbody>${rows}</tbody></table>`,
+            `<table><thead><tr><th>${escapeHtml(t('field'))}</th><th>${escapeHtml(t('file_column'))}</th>${choosesAction ? `<th>${escapeHtml(t('on_error'))}</th>` : ''}</tr></thead><tbody>${rows}</tbody></table>`,
             saveTemplates ? `<label>${escapeHtml(t('template_name'))}<input id="sheetflow-template-name" type="text" maxlength="255"></label>` : '',
             saveTemplates ? `<div class="row"><button type="button" id="sheetflow-save-map">${escapeHtml(t('save_mapping'))}</button></div>` : '',
             '</section>',
@@ -181,7 +183,7 @@
             `<section><h2>${escapeHtml(t('actions_heading'))}</h2>`,
             '<div class="row">',
             '<button type="button" id="sheetflow-validate" ' + (run.status === 'staged' ? '' : 'disabled') + `>${escapeHtml(t('validate'))}</button>`,
-            '<button type="button" id="sheetflow-import" ' + (run.status === 'validated' && run.valid_rows > 0 ? '' : 'disabled') + `>${escapeHtml(t('import_valid'))}</button>`,
+            '<button type="button" id="sheetflow-import" ' + (run.status === 'validated' && run.valid_rows > 0 && !run.stopped_row ? '' : 'disabled') + `>${escapeHtml(t('import_valid'))}</button>`,
             '</div>',
             validationNotice(),
             importNotice(),
@@ -192,6 +194,10 @@
     function validationNotice() {
         if (!run || run.status !== 'validated') {
             return '';
+        }
+
+        if (run.stopped_row) {
+            return `<p class="notice">${escapeHtml(fill('import_stopped', { row: run.stopped_row }))}</p>`;
         }
 
         const key = run.failed_rows > 0 ? 'validated_partial' : 'validated_ready';
@@ -221,6 +227,39 @@
         if (node) {
             node.textContent = error.message ?? t('something_wrong');
         }
+    }
+
+    function invalidActionControl(field) {
+        const allowed = field.allowed_invalid_actions || [];
+        const selected = (run.invalid_actions || {})[field.name] || field.invalid_action;
+
+        if (allowed.length < 2) {
+            return escapeHtml(t(`invalid_actions.${selected}`));
+        }
+
+        const options = allowed.map((action) => {
+            const isSelected = action === selected ? ' selected' : '';
+
+            return `<option value="${escapeHtml(action)}"${isSelected}>${escapeHtml(t(`invalid_actions.${action}`))}</option>`;
+        }).join('');
+
+        return `<select data-invalid-action="${escapeHtml(field.name)}">${options}</select>`;
+    }
+
+    function currentInvalidActions() {
+        const actions = { ...(run.invalid_actions || {}) };
+
+        document.querySelectorAll('[data-invalid-action]').forEach((select) => {
+            actions[select.dataset.invalidAction] = select.value;
+        });
+
+        (run.fields || []).forEach((field) => {
+            if (!actions[field.name]) {
+                actions[field.name] = field.invalid_action;
+            }
+        });
+
+        return actions;
     }
 
     function currentMap() {
@@ -280,7 +319,15 @@
         }
 
         run.column_map = template.column_map;
+        run.invalid_actions = template.invalid_actions || run.invalid_actions;
         applyMapToSelects();
+        document.querySelectorAll('[data-invalid-action]').forEach((select) => {
+            const value = (run.invalid_actions || {})[select.dataset.invalidAction];
+
+            if (value) {
+                select.value = value;
+            }
+        });
     }
 
     async function onSaveMap() {
@@ -292,6 +339,7 @@
                 headers: { ...headers, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     column_map: currentMap(),
+                    invalid_actions: currentInvalidActions(),
                     save_template: name !== '',
                     template_name: name,
                 }),
@@ -307,7 +355,10 @@
             run = await request(`${api}/runs/${run.id}/validation`, {
                 method: 'POST',
                 headers: { ...headers, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ column_map: currentMap() }),
+                body: JSON.stringify({
+                    column_map: currentMap(),
+                    invalid_actions: currentInvalidActions(),
+                }),
             });
             render();
             watch();

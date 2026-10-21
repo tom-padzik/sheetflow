@@ -14,7 +14,7 @@ class RowMapper
      * @param  array<string, string|null>  $columnMap
      * @param  array<string, string|null>  $raw
      */
-    public function map(int $rowNumber, array $raw, array $fields, array $columnMap): MappedRow
+    public function map(int $rowNumber, array $raw, array $fields, array $columnMap, ValueCensus $census = new ValueCensus): MappedRow
     {
         $attributes = [];
 
@@ -32,6 +32,7 @@ class RowMapper
             rowNumber: $rowNumber,
             raw: $raw,
             attributes: $attributes,
+            census: $census,
         );
     }
 }

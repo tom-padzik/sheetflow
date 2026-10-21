@@ -12,7 +12,9 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use OpenSpout\Common\Exception\OpenSpoutException;
 use Throwable;
+use Tpadzik\Sheetflow\CheckedRow;
 use Tpadzik\Sheetflow\Contracts\SpreadsheetReaderInterface;
+use Tpadzik\Sheetflow\Enums\InvalidAction;
 use Tpadzik\Sheetflow\Enums\RowStatus;
 use Tpadzik\Sheetflow\Enums\RunStatus;
 use Tpadzik\Sheetflow\Exceptions\InvalidSpreadsheetException;
@@ -21,6 +23,8 @@ use Tpadzik\Sheetflow\ImportDefinition;
 use Tpadzik\Sheetflow\Jobs\ImportRowsChunk;
 use Tpadzik\Sheetflow\Jobs\StageImportRows;
 use Tpadzik\Sheetflow\Jobs\ValidateImportChunk;
+use Tpadzik\Sheetflow\MappedFile;
+use Tpadzik\Sheetflow\MappedRow;
 use Tpadzik\Sheetflow\Models\ImportFailure;
 use Tpadzik\Sheetflow\Models\ImportRow;
 use Tpadzik\Sheetflow\Models\ImportRun;
@@ -31,6 +35,7 @@ use Tpadzik\Sheetflow\Support\DefinitionRegistry;
 use Tpadzik\Sheetflow\Support\HeaderSignature;
 use Tpadzik\Sheetflow\Support\RowMapper;
 use Tpadzik\Sheetflow\Support\RowValidator;
+use Tpadzik\Sheetflow\Support\ValueCensus;
 
 class ImportPipeline
 {
@@ -242,7 +247,7 @@ class ImportPipeline
      *
      * @throws ValidationException
      */
-    public function saveMapping(ImportRun $run, array $columnMap, bool $saveTemplate, ?string $templateName): ImportRun
+    public function saveMapping(ImportRun $run, array $columnMap, bool $saveTemplate, ?string $templateName, array $invalidActions = []): ImportRun
     {
         $this->assertStatus($run, RunStatus::staged, RunStatus::validated);
         $definition = $this->definitions->resolve($run->definition_key);
@@ -250,6 +255,10 @@ class ImportPipeline
             definition: $definition,
             headers: $run->headers ?? [],
             columnMap: $columnMap,
+        );
+        $actions = $this->normalizeInvalidActions(
+            definition: $definition,
+            actions: $invalidActions,
         );
 
         if (RunStatus::validated === $run->status) {
@@ -259,6 +268,9 @@ class ImportPipeline
 
         $run->forceFill([
             'column_map' => $normalized,
+            'invalid_actions' => $actions,
+            'stopped_row' => null,
+            'file_errors' => null,
             'status' => RunStatus::staged,
             'valid_rows' => 0,
             'failed_rows' => 0,
@@ -272,6 +284,7 @@ class ImportPipeline
                 run: $run,
                 name: $templateName,
                 columnMap: $normalized,
+                invalidActions: $actions,
             );
         }
 
@@ -289,11 +302,14 @@ class ImportPipeline
 
         $run->failures()->delete();
         $run->rows()->update(['status' => RowStatus::pending->value]);
+        $file = $this->mappedFile(run: $run, definition: $definition);
         $run->forceFill([
             'status' => RunStatus::validating,
             'processed_rows' => 0,
             'valid_rows' => 0,
             'failed_rows' => 0,
+            'stopped_row' => null,
+            'file_errors' => $this->normalizeFileErrors(errors: $definition->validateFile(file: $file)),
         ])->save();
 
         $this->dispatchChunks(
@@ -319,11 +335,13 @@ class ImportPipeline
         }
 
         $definition = $this->definitions->resolve($run->definition_key);
+        $census = $this->censusFor(run: $run, definition: $definition);
         $rows = ImportRow::query()
             ->where('run_id', $run->id)
             ->whereIn('id', $rowIds)
             ->orderBy('row_number')
             ->get();
+        $stopAt = null;
 
         foreach ($rows as $row) {
             /** @var array<string, string|null> $raw */
@@ -333,13 +351,15 @@ class ImportPipeline
                 raw: $raw,
                 fields: $definition->fields(),
                 columnMap: $run->column_map ?? [],
+                census: $census,
             );
-            $errors = $this->validator->validate(
-                row: $mapped,
-                fields: $definition->fields(),
-            );
+            $checked = $this->rowErrors(definition: $definition, run: $run, row: $mapped);
 
-            if (null === $errors) {
+            if ($checked->stopsImport) {
+                $stopAt = null === $stopAt ? $row->row_number : min($stopAt, $row->row_number);
+            }
+
+            if (null === $checked->errors) {
                 $row->forceFill(['status' => RowStatus::valid])->save();
                 $run->increment('valid_rows');
             } else {
@@ -348,12 +368,16 @@ class ImportPipeline
                     'run_id' => $run->id,
                     'row_number' => $row->row_number,
                     'values' => $raw,
-                    'errors' => $errors,
+                    'errors' => $checked->errors,
                 ]);
                 $run->increment('failed_rows');
             }
 
             $run->increment('processed_rows');
+        }
+
+        if (null !== $stopAt) {
+            $this->rememberStop(run: $run, rowNumber: $stopAt);
         }
     }
 
@@ -385,6 +409,12 @@ class ImportPipeline
     {
         $this->assertStatus($run, RunStatus::validated);
 
+        if (null !== $run->stopped_row) {
+            throw ValidationException::withMessages([
+                'import' => __('sheetflow::messages.import_stopped', ['row' => $run->stopped_row]),
+            ]);
+        }
+
         if (0 === (int) $run->valid_rows) {
             throw ValidationException::withMessages([
                 'import' => 'There are no valid rows to import.',
@@ -415,11 +445,12 @@ class ImportPipeline
     {
         $run = $this->activeRun($runId);
 
-        if (null === $run) {
+        if (null === $run || null !== $run->stopped_row) {
             return;
         }
 
         $definition = $this->definitions->resolve($run->definition_key);
+        $census = $this->censusFor(run: $run, definition: $definition);
         $rows = ImportRow::query()
             ->where('run_id', $run->id)
             ->whereIn('id', $rowIds)
@@ -434,28 +465,30 @@ class ImportPipeline
                 raw: $raw,
                 fields: $definition->fields(),
                 columnMap: $run->column_map ?? [],
+                census: $census,
             );
-            $errors = $this->validator->validate(
-                row: $mapped,
-                fields: $definition->fields(),
-            );
+            $checked = $this->rowErrors(definition: $definition, run: $run, row: $mapped);
 
-            if (null !== $errors) {
+            if (null !== $checked->errors) {
                 $row->forceFill(['status' => RowStatus::invalid])->save();
                 ImportFailure::query()->create([
                     'run_id' => $run->id,
                     'row_number' => $row->row_number,
                     'values' => $raw,
-                    'errors' => $errors,
+                    'errors' => $checked->errors,
                 ]);
                 $run->increment('failed_rows');
                 $run->increment('processed_rows');
+
+                if ($checked->stopsImport) {
+                    $this->rememberStop(run: $run, rowNumber: $row->row_number);
+                }
 
                 continue;
             }
 
             try {
-                $definition->handle($mapped);
+                $definition->handle($checked->row);
             } catch (Throwable $exception) {
                 $row->forceFill(['status' => RowStatus::invalid])->save();
                 ImportFailure::query()->create([
@@ -554,11 +587,19 @@ class ImportPipeline
             'sheet_names' => $run->sheet_names ?? [],
             'preview_rows' => $run->preview_rows ?? [],
             'column_map' => $run->column_map ?? [],
+            'invalid_actions' => $run->invalid_actions ?? [],
+            'stopped_row' => $run->stopped_row,
             'fields' => array_map(
                 fn (Field $field): array => [
                     'name' => $field->name(),
                     'label' => $field->displayLabel(),
                     'required' => $field->isRequired(),
+                    'unique_in_file' => $field->isUniqueInFile(),
+                    'invalid_action' => $field->invalidAction()->value,
+                    'allowed_invalid_actions' => array_map(
+                        fn (InvalidAction $action): string => $action->value,
+                        $field->allowedInvalidActions(),
+                    ),
                 ],
                 $definition->fields(),
             ),
@@ -571,6 +612,344 @@ class ImportPipeline
             'imported_rows' => (int) $run->imported_rows,
             'percent' => $total > 0 ? (int) floor(($processed / $total) * 100) : 0,
         ];
+    }
+
+    private function censusFor(ImportRun $run, ImportDefinition $definition): ValueCensus
+    {
+        /** @var array<string, array<string, int>> $counts */
+        $counts = [];
+
+        ImportRow::query()
+            ->where('run_id', $run->id)
+            ->select(['id', 'row_number', 'values'])
+            ->chunkById(500, function ($rows) use (&$counts, $run, $definition): void {
+                foreach ($rows as $row) {
+                    /** @var array<string, string|null> $raw */
+                    $raw = $row->values ?? [];
+                    $mapped = $this->mapper->map(
+                        rowNumber: $row->row_number,
+                        raw: $raw,
+                        fields: $definition->fields(),
+                        columnMap: $run->column_map ?? [],
+                    );
+
+                    foreach ($mapped->attributes() as $field => $value) {
+                        if (! is_string($value) || '' === $value) {
+                            continue;
+                        }
+
+                        $counts[$field][$value] = ($counts[$field][$value] ?? 0) + 1;
+                    }
+                }
+            });
+
+        return new ValueCensus(counts: $counts);
+    }
+
+    private function rowErrors(ImportDefinition $definition, ImportRun $run, MappedRow $row): CheckedRow
+    {
+        $ruleErrors = $this->validator->validate(
+            row: $row,
+            fields: $definition->fields(),
+        ) ?? [];
+        $errors = [];
+        $adjusted = $row;
+        $stops = false;
+
+        foreach ($definition->fields() as $field) {
+            $messages = $ruleErrors[$field->name()] ?? [];
+
+            if ([] === $messages) {
+                continue;
+            }
+
+            $action = $this->actionFor(field: $field, run: $run);
+
+            if (InvalidAction::Null === $action) {
+                $adjusted = $adjusted->withNull(field: $field->name());
+
+                continue;
+            }
+
+            $errors[$field->name()] = $messages;
+
+            if (InvalidAction::Stop === $action) {
+                $stops = true;
+            }
+        }
+
+        foreach ($definition->fields() as $field) {
+            if (! $field->isUniqueInFile()) {
+                continue;
+            }
+
+            $value = $row->value(field: $field->name());
+
+            if (! is_string($value) || '' === $value || $row->occurrences(field: $field->name()) < 2) {
+                continue;
+            }
+
+            $errors[$field->name()][] = __('sheetflow::messages.errors.duplicate_in_file', [
+                'field' => $field->displayLabel(),
+            ]);
+
+            if (InvalidAction::Stop === $this->actionFor(field: $field, run: $run)) {
+                $stops = true;
+            }
+        }
+
+        foreach ($definition->validateRow(row: $adjusted) as $field => $messages) {
+            if (! is_string($field)) {
+                continue;
+            }
+
+            $list = $this->messagesFrom(messages: $messages);
+
+            if ([] === $list) {
+                continue;
+            }
+
+            foreach ($list as $message) {
+                $errors[$field][] = $message;
+            }
+
+            $match = $this->fieldNamed(definition: $definition, name: $field);
+
+            if (null !== $match && InvalidAction::Stop === $this->actionFor(field: $match, run: $run)) {
+                $stops = true;
+            }
+        }
+
+        $fileErrors = $this->fileErrorsFor(definition: $definition, run: $run, row: $row);
+        $errors = $this->mergeMessages(left: $errors, right: $fileErrors['errors']);
+        $stops = $stops || $fileErrors['stops'];
+
+        return new CheckedRow(
+            errors: [] === $errors ? null : $errors,
+            row: $adjusted,
+            stopsImport: $stops,
+        );
+    }
+
+    /**
+     * @return array{errors: array<string, list<string>>, stops: bool}
+     */
+    private function fileErrorsFor(ImportDefinition $definition, ImportRun $run, MappedRow $row): array
+    {
+        $stored = $run->file_errors ?? [];
+        $forRow = $stored[$row->rowNumber] ?? $stored[(string) $row->rowNumber] ?? [];
+        $errors = [];
+        $stops = false;
+
+        if (! is_array($forRow)) {
+            return ['errors' => $errors, 'stops' => $stops];
+        }
+
+        foreach ($forRow as $field => $messages) {
+            if (! is_string($field)) {
+                continue;
+            }
+
+            $list = $this->messagesFrom(messages: $messages);
+
+            if ([] === $list) {
+                continue;
+            }
+
+            $errors[$field] = $list;
+            $match = $this->fieldNamed(definition: $definition, name: $field);
+
+            if (null !== $match && InvalidAction::Stop === $this->actionFor(field: $match, run: $run)) {
+                $stops = true;
+            }
+        }
+
+        return ['errors' => $errors, 'stops' => $stops];
+    }
+
+    /**
+     * @param  array<string, list<string>>  $left
+     * @param  array<string, list<string>>  $right
+     * @return array<string, list<string>>
+     */
+    private function mergeMessages(array $left, array $right): array
+    {
+        foreach ($right as $field => $messages) {
+            foreach ($messages as $message) {
+                $left[$field][] = $message;
+            }
+        }
+
+        return $left;
+    }
+
+    private function mappedFile(ImportRun $run, ImportDefinition $definition): MappedFile
+    {
+        $census = $this->censusFor(run: $run, definition: $definition);
+        $rows = [];
+
+        ImportRow::query()
+            ->where('run_id', $run->id)
+            ->orderBy('row_number')
+            ->select(['id', 'row_number', 'values'])
+            ->chunkById(500, function ($storedRows) use (&$rows, $run, $definition, $census): void {
+                foreach ($storedRows as $stored) {
+                    /** @var array<string, string|null> $raw */
+                    $raw = $stored->values ?? [];
+                    $rows[] = $this->mapper->map(
+                        rowNumber: $stored->row_number,
+                        raw: $raw,
+                        fields: $definition->fields(),
+                        columnMap: $run->column_map ?? [],
+                        census: $census,
+                    );
+                }
+            });
+
+        usort($rows, fn (MappedRow $left, MappedRow $right): int => $left->rowNumber <=> $right->rowNumber);
+
+        return new MappedFile(rows: $rows);
+    }
+
+    /**
+     * @param  array<mixed, mixed>  $errors
+     * @return array<string, array<string, list<string>>>
+     */
+    private function normalizeFileErrors(array $errors): array
+    {
+        $normalized = [];
+
+        foreach ($errors as $rowNumber => $fields) {
+            if (! is_array($fields) || ! is_numeric($rowNumber)) {
+                continue;
+            }
+
+            foreach ($fields as $field => $messages) {
+                if (! is_string($field)) {
+                    continue;
+                }
+
+                $list = $this->messagesFrom(messages: $messages);
+
+                if ([] === $list) {
+                    continue;
+                }
+
+                $normalized[(string) $rowNumber][$field] = $list;
+            }
+        }
+
+        return $normalized;
+    }
+
+    private function actionFor(Field $field, ImportRun $run): InvalidAction
+    {
+        $stored = ($run->invalid_actions ?? [])[$field->name()] ?? null;
+
+        if (is_string($stored)) {
+            $action = InvalidAction::tryFrom($stored);
+
+            if (null !== $action && in_array($action, $field->allowedInvalidActions(), true)) {
+                return $action;
+            }
+        }
+
+        return $field->invalidAction();
+    }
+
+    private function fieldNamed(ImportDefinition $definition, string $name): ?Field
+    {
+        foreach ($definition->fields() as $field) {
+            if ($field->name() === $name) {
+                return $field;
+            }
+        }
+
+        return null;
+    }
+
+    private function rememberStop(ImportRun $run, int $rowNumber): void
+    {
+        ImportRun::query()
+            ->whereKey($run->id)
+            ->where(function ($query) use ($rowNumber): void {
+                $query->whereNull('stopped_row')->orWhere('stopped_row', '>', $rowNumber);
+            })
+            ->update(['stopped_row' => $rowNumber]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $actions
+     * @return array<string, string>
+     *
+     * @throws ValidationException
+     */
+    private function normalizeInvalidActions(ImportDefinition $definition, array $actions): array
+    {
+        $normalized = [];
+        $errors = [];
+        $known = [];
+
+        foreach ($definition->fields() as $field) {
+            $known[$field->name()] = true;
+            $allowed = array_map(
+                fn (InvalidAction $action): string => $action->value,
+                $field->allowedInvalidActions(),
+            );
+            $given = $actions[$field->name()] ?? null;
+
+            if (! is_string($given) || '' === $given) {
+                $normalized[$field->name()] = $field->invalidAction()->value;
+
+                continue;
+            }
+
+            if (! in_array($given, $allowed, true)) {
+                $errors[$field->name()] = __('sheetflow::messages.errors.invalid_action');
+
+                continue;
+            }
+
+            $normalized[$field->name()] = $given;
+        }
+
+        foreach (array_keys($actions) as $fieldName) {
+            if (! is_string($fieldName) || isset($known[$fieldName])) {
+                continue;
+            }
+
+            $errors['invalid_actions'] = __('sheetflow::messages.errors.unknown_field');
+        }
+
+        if ([] !== $errors) {
+            throw ValidationException::withMessages($errors);
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function messagesFrom(mixed $messages): array
+    {
+        if (is_string($messages)) {
+            return '' === $messages ? [] : [$messages];
+        }
+
+        if (! is_array($messages)) {
+            return [];
+        }
+
+        $list = [];
+
+        foreach ($messages as $message) {
+            if (is_string($message) && '' !== $message) {
+                $list[] = $message;
+            }
+        }
+
+        return $list;
     }
 
     /**
@@ -749,8 +1128,9 @@ class ImportPipeline
 
     /**
      * @param  array<string, string|null>  $columnMap
+     * @param  array<string, string>  $invalidActions
      */
-    private function storeTemplate(ImportRun $run, string $name, array $columnMap): void
+    private function storeTemplate(ImportRun $run, string $name, array $columnMap, array $invalidActions): void
     {
         $query = MappingTemplate::query()
             ->where('definition_key', $run->definition_key)
@@ -769,12 +1149,13 @@ class ImportPipeline
             'name' => $name,
             'header_signature' => $run->header_signature,
             'column_map' => $columnMap,
+            'invalid_actions' => $invalidActions,
             'user_id' => $run->user_id,
         ])->save();
     }
 
     /**
-     * @return list<array{id: int, name: string, column_map: array<string, string|null>}>
+     * @return list<array{id: int, name: string, column_map: array<string, string|null>, invalid_actions: array<string, string>}>
      */
     private function templatesFor(ImportRun $run): array
     {
@@ -792,10 +1173,14 @@ class ImportPipeline
             /** @var array<string, string|null> $map */
             $map = $template->column_map ?? [];
 
+            /** @var array<string, string> $actions */
+            $actions = $template->invalid_actions ?? [];
+
             return [
                 'id' => (int) $template->id,
                 'name' => $template->name,
                 'column_map' => $map,
+                'invalid_actions' => $actions,
             ];
         })->all();
     }

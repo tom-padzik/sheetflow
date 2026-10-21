@@ -23,6 +23,8 @@ class UpdateMappingRequest extends FormRequest
             'column_map.*' => ['nullable', 'string', 'max:255'],
             'save_template' => ['sometimes', 'boolean'],
             'template_name' => ['nullable', 'string', 'max:255'],
+            'invalid_actions' => ['sometimes', 'array'],
+            'invalid_actions.*' => ['nullable', 'string', 'max:32'],
         ];
     }
 }

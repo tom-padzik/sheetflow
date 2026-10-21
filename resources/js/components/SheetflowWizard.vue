@@ -50,6 +50,7 @@
                     <tr>
                         <th>{{ text('field') }}</th>
                         <th>{{ text('file_column') }}</th>
+                        <th v-if="choosesAction">{{ text('on_error') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -60,6 +61,12 @@
                                 <option :value="null">{{ text('skip') }}</option>
                                 <option v-for="header in run.headers" :key="header" :value="header">{{ header }}</option>
                             </select>
+                        </td>
+                        <td v-if="choosesAction">
+                            <select v-if="field.allowed_invalid_actions.length > 1" v-model="invalidActions[field.name]">
+                                <option v-for="action in field.allowed_invalid_actions" :key="action" :value="action">{{ text('invalid_actions.' + action) }}</option>
+                            </select>
+                            <span v-else>{{ text('invalid_actions.' + (invalidActions[field.name] || field.invalid_action)) }}</span>
                         </td>
                     </tr>
                 </tbody>
@@ -83,7 +90,7 @@
             <h2>{{ text('actions_heading') }}</h2>
             <div class="row">
                 <button type="button" :disabled="run.status !== 'staged'" @click="validateRun">{{ text('validate') }}</button>
-                <button type="button" :disabled="run.status !== 'validated' || run.valid_rows < 1" @click="importRows">{{ text('import_valid') }}</button>
+                <button type="button" :disabled="run.status !== 'validated' || run.valid_rows < 1 || run.stopped_row" @click="importRows">{{ text('import_valid') }}</button>
             </div>
             <p v-if="run.status === 'validated'" class="notice">{{ validationNotice }}</p>
             <p v-if="run.status === 'completed'" class="notice">{{ importNotice }}</p>
@@ -126,6 +133,7 @@ const ready = ref(props.messages !== null);
 const run = ref(null);
 const file = ref(null);
 const columnMap = ref({});
+const invalidActions = ref({});
 const templateName = ref('');
 const failures = ref([]);
 const error = ref('');
@@ -133,6 +141,7 @@ let timer = null;
 
 const busy = computed(() => run.value && ['staging', 'validating', 'importing'].includes(run.value.status));
 const mapped = computed(() => run.value && !['staging', 'uploaded'].includes(run.value.status));
+const choosesAction = computed(() => (run.value?.fields || []).some((field) => (field.allowed_invalid_actions || []).length > 1));
 
 watch(run, (value) => {
     if (!value) {
@@ -140,6 +149,7 @@ watch(run, (value) => {
     }
 
     columnMap.value = { ...value.column_map };
+    invalidActions.value = { ...(value.invalid_actions || {}) };
 
     if (value.failed_rows > 0 && ['validated', 'completed', 'importing', 'failed'].includes(value.status)) {
         loadFailures();
@@ -173,6 +183,10 @@ function fill(path, replacements) {
 const validationNotice = computed(() => {
     if (!run.value || run.value.status !== 'validated') {
         return '';
+    }
+
+    if (run.value.stopped_row) {
+        return fill('import_stopped', { row: run.value.stopped_row });
     }
 
     const key = run.value.failed_rows > 0 ? 'validated_partial' : 'validated_ready';
@@ -287,6 +301,7 @@ function applyTemplate(event) {
 
     if (template) {
         columnMap.value = { ...template.column_map };
+        invalidActions.value = { ...(template.invalid_actions || invalidActions.value) };
     }
 }
 
@@ -299,6 +314,7 @@ async function saveMapping() {
             headers: jsonHeaders(),
             body: JSON.stringify({
                 column_map: columnMap.value,
+                invalid_actions: currentInvalidActions(),
                 save_template: templateName.value !== '',
                 template_name: templateName.value,
             }),
@@ -308,6 +324,18 @@ async function saveMapping() {
     }
 }
 
+function currentInvalidActions() {
+    const actions = { ...invalidActions.value };
+
+    (run.value?.fields || []).forEach((field) => {
+        if (!actions[field.name]) {
+            actions[field.name] = field.invalid_action;
+        }
+    });
+
+    return actions;
+}
+
 async function validateRun() {
     error.value = '';
 
@@ -315,7 +343,10 @@ async function validateRun() {
         run.value = await request(`${props.apiBase}/runs/${run.value.id}/validation`, {
             method: 'POST',
             headers: jsonHeaders(),
-            body: JSON.stringify({ column_map: columnMap.value }),
+            body: JSON.stringify({
+                column_map: columnMap.value,
+                invalid_actions: currentInvalidActions(),
+            }),
         });
         watchRun();
     } catch (caught) {

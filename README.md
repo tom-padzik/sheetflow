@@ -171,10 +171,81 @@ class ProductImport extends ImportDefinition
 | `guess()` | Extra header names used when the column map is first suggested. The field name and label are always candidates. |
 | `matchOn()` | Include this attribute in the default `updateOrCreate()` lookup. |
 | `label()` | Text shown in the wizard. The default replaces `_` in the field name with spaces. |
+| `uniqueInFile()` | Reject every row where this field's non-empty value appears more than once in the file. |
+| `onInvalid()` | What to do when the field's rules fail. `InvalidAction::SkipRow` rejects the row and continues. `InvalidAction::Null` stores an empty value when the field is not required. `InvalidAction::Stop` finishes the check and then refuses to import any row. Pass `allowed` when the person importing may choose among those actions in the column map. |
 
 `ImportDefinition::authorize()` is optional and separate from the fields. Return `true` to allow this import, `false` to refuse it, or `null` to defer to `Sheetflow::authorize()`. See [Who may import](#who-may-import).
 
 `ImportDefinition::saveTemplates()` is optional. Return `false` to hide saved maps for this import, `true` to keep them, or `null` to follow `sheetflow.save_templates`. The column dropdowns stay. Validate still sends the map shown on screen. `PUT /sheetflow/api/runs/{run}/mapping` with `save_template` returns 403 while the switch is off, for the global setting and for a definition that returns `false`.
+
+`validateRow()` is optional. It runs after the field rules, during validation and again before each row is written. Return field names mapped to message lists. An empty array accepts the row. Both sets of messages are kept.
+
+```php
+use Tpadzik\Sheetflow\MappedRow;
+
+public function validateRow(MappedRow $row): array
+{
+    $errors = [];
+    $email = $row->value(field: 'email');
+
+    if (is_string($email) && '' !== $email && false === filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $errors['email'][] = 'Enter a valid email address.';
+    }
+
+    $id = $row->value(field: 'ID');
+
+    if (is_string($id) && '' !== $id && Product::query()->where('ID', $id)->exists()) {
+        $errors['ID'][] = 'This ID already exists.';
+    }
+
+    return $errors;
+}
+```
+
+`value()` reads the mapped cell. `occurrences()` counts that same non-empty value across the file, including the current row. A repeated value can also be declared with `uniqueInFile()` on the field. A single cell can use a Laravel rule such as `email` or `unique:products,sku`.
+
+`validateFile()` is optional. It runs once before the per-row rules. Return row numbers mapped to field messages. An empty array accepts every row.
+
+```php
+use Tpadzik\Sheetflow\MappedFile;
+
+public function validateFile(MappedFile $file): array
+{
+    $totals = [];
+
+    foreach ($file->values(fields: ['ID', 'FOO']) as $entry) {
+        $id = (string) ($entry['ID'] ?? '');
+        $totals[$id] = ($totals[$id] ?? 0) + (float) ($entry['FOO'] ?? 0);
+    }
+
+    $errors = [];
+
+    foreach ($file->rows() as $row) {
+        $id = (string) $row->value(field: 'ID');
+
+        if (($totals[$id] ?? 0) > 200) {
+            $errors[$row->rowNumber]['FOO'][] = 'The sum for this ID is over 200.';
+        }
+    }
+
+    return $errors;
+}
+```
+
+`rows()` lists every mapped row. `values()` returns the named fields together with the row number. `column(field: 'FOO')` returns `row` and `value` for that one field. Each row still has `rowNumber`, `attributes()`, and `value()`.
+
+```php
+use Tpadzik\Sheetflow\Enums\InvalidAction;
+
+Field::make(name: 'ID')->rules(rules: ['required', 'string'])->uniqueInFile(),
+Field::make(name: 'price')->rules(rules: ['numeric'])->onInvalid(action: InvalidAction::Null),
+Field::make(name: 'email')->rules(rules: ['email'])->onInvalid(
+    action: InvalidAction::SkipRow,
+    allowed: [InvalidAction::SkipRow, InvalidAction::Null],
+),
+```
+
+When more than one action is allowed, the column map shows an **On error** choice. That choice is stored with the run and with a saved map. One allowed action is applied on its own. `Null` is ignored on a required field. A value repeated in the file still rejects the row when that field uses `Null` for ordinary rule failures. `Stop` leaves every row unimported and the wizard names the row that stopped the import.
 
 `handle()` is final. For every valid row it calls `beforePersist()`, then `persist()`, then `afterPersist()`. Validation always runs before `handle()`.
 
@@ -254,7 +325,7 @@ The upload response is `201` and the run payload. Mapping body:
 
 A `null` or empty header skips that field. Sheet body: `{"sheet": "Prices"}`.
 
-The run payload includes `id`, `definition`, `status`, `filename`, `format`, `delimiter`, `sheet`, `headers`, `sheet_names`, `preview_rows`, `column_map`, `fields` (`name`, `label`, `required`), `save_templates`, `templates` (`id`, `name`, `column_map`), `total_rows`, `processed_rows`, `valid_rows`, `failed_rows`, `imported_rows`, and `percent`. `save_templates` is false when named maps are hidden, and `templates` is then empty.
+The run payload includes `id`, `definition`, `status`, `filename`, `format`, `delimiter`, `sheet`, `headers`, `sheet_names`, `preview_rows`, `column_map`, `invalid_actions`, `stopped_row`, `fields` (`name`, `label`, `required`, `unique_in_file`, `invalid_action`, `allowed_invalid_actions`), `save_templates`, `templates` (`id`, `name`, `column_map`, `invalid_actions`), `total_rows`, `processed_rows`, `valid_rows`, `failed_rows`, `imported_rows`, and `percent`. `save_templates` is false when named maps are hidden, and `templates` is then empty. `stopped_row` is set when a field's error action stops the import.
 
 Failures look like this:
 

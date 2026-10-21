@@ -65,7 +65,7 @@ class RunController extends SheetflowController
 
         /** @var array<string, string|null> $columnMap */
         $columnMap = $request->input('column_map', []);
-
+        $invalidActions = $request->input('invalid_actions', $run->invalid_actions ?? []);
         $templateName = $request->input('template_name');
 
         $run = $this->pipeline->saveMapping(
@@ -73,6 +73,7 @@ class RunController extends SheetflowController
             columnMap: $columnMap,
             saveTemplate: $request->boolean('save_template'),
             templateName: is_string($templateName) ? $templateName : null,
+            invalidActions: is_array($invalidActions) ? $invalidActions : [],
         );
 
         return response()->json($this->pipeline->present($run));
@@ -101,16 +102,24 @@ class RunController extends SheetflowController
         $data = $request->validate([
             'column_map' => ['sometimes', 'array'],
             'column_map.*' => ['nullable', 'string', 'max:255'],
+            'invalid_actions' => ['sometimes', 'array'],
+            'invalid_actions.*' => ['nullable', 'string', 'max:32'],
         ]);
 
-        if (isset($data['column_map']) && is_array($data['column_map'])) {
+        if (isset($data['column_map']) || isset($data['invalid_actions'])) {
             /** @var array<string, string|null> $columnMap */
-            $columnMap = $data['column_map'];
+            $columnMap = isset($data['column_map']) && is_array($data['column_map'])
+                ? $data['column_map']
+                : ($run->column_map ?? []);
+            $invalidActions = isset($data['invalid_actions']) && is_array($data['invalid_actions'])
+                ? $data['invalid_actions']
+                : ($run->invalid_actions ?? []);
             $run = $this->pipeline->saveMapping(
                 run: $run,
                 columnMap: $columnMap,
                 saveTemplate: false,
                 templateName: null,
+                invalidActions: $invalidActions,
             );
         }
 

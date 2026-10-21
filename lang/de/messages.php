@@ -21,6 +21,13 @@ return [
     'skip' => 'Überspringen',
     'field' => 'Feld',
     'file_column' => 'Dateispalte',
+    'on_error' => 'Bei einem Fehler',
+    'import_stopped' => 'Der Import wurde in Zeile :row abgebrochen. Es wurde keine Zeile importiert.',
+    'invalid_actions' => [
+        'skip_row' => 'Zeile überspringen',
+        'null' => 'Leer setzen',
+        'stop' => 'Import abbrechen',
+    ],
     'template_name' => 'Vorlagenname',
     'save_mapping' => 'Zuordnung speichern',
     'actions_heading' => '4. Prüfen und importieren',
@@ -58,5 +65,7 @@ return [
         'unsupported_format' => 'Das Format [:format] wird nicht unterstützt.',
         'unreadable' => 'Die Tabelle konnte nicht gelesen werden.',
         'unreadable_file' => 'Die Datei „:filename“ konnte nicht gelesen werden: :reason.',
+        'duplicate_in_file' => 'Der Wert im Feld :field kommt in der Datei mehrfach vor.',
+        'invalid_action' => 'Diese Reaktion auf einen Fehler ist für dieses Feld nicht zulässig.',
     ],
 ];

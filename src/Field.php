@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Tpadzik\Sheetflow;
 
+use Tpadzik\Sheetflow\Enums\InvalidAction;
+
 class Field
 {
     /**
      * @param  list<string>  $rules
      * @param  list<string>  $guesses
+     * @param  list<InvalidAction>  $invalidChoices
      */
     private function __construct(
         private readonly string $name,
@@ -16,6 +19,9 @@ class Field
         private array $guesses = [],
         private bool $matchesOn = false,
         private ?string $label = null,
+        private bool $uniqueInFile = false,
+        private InvalidAction $invalidAction = InvalidAction::SkipRow,
+        private array $invalidChoices = [],
     ) {}
 
     public static function make(string $name): self
@@ -53,6 +59,24 @@ class Field
     public function label(string $label): self
     {
         $this->label = $label;
+
+        return $this;
+    }
+
+    public function uniqueInFile(): self
+    {
+        $this->uniqueInFile = true;
+
+        return $this;
+    }
+
+    /**
+     * @param  list<InvalidAction>  $allowed
+     */
+    public function onInvalid(InvalidAction $action, array $allowed = []): self
+    {
+        $this->invalidAction = $action;
+        $this->invalidChoices = $allowed;
 
         return $this;
     }
@@ -95,5 +119,42 @@ class Field
     public function isRequired(): bool
     {
         return in_array('required', $this->rules, true);
+    }
+
+    public function isUniqueInFile(): bool
+    {
+        return $this->uniqueInFile;
+    }
+
+    public function invalidAction(): InvalidAction
+    {
+        $allowed = $this->allowedInvalidActions();
+
+        if (in_array($this->invalidAction, $allowed, true)) {
+            return $this->invalidAction;
+        }
+
+        return $allowed[0];
+    }
+
+    /**
+     * @return list<InvalidAction>
+     */
+    public function allowedInvalidActions(): array
+    {
+        $choices = [] === $this->invalidChoices ? [$this->invalidAction] : $this->invalidChoices;
+
+        if ($this->isRequired()) {
+            $choices = array_values(array_filter(
+                $choices,
+                fn (InvalidAction $action): bool => InvalidAction::Null !== $action,
+            ));
+        }
+
+        if ([] === $choices) {
+            return [InvalidAction::SkipRow];
+        }
+
+        return array_values($choices);
     }
 }

@@ -16,11 +16,20 @@ use PhpOffice\PhpSpreadsheet\Writer\Xls;
 use PHPUnit\Framework\Attributes\Test;
 use Tpadzik\Sheetflow\Models\ImportRun;
 use Tpadzik\Sheetflow\Sheetflow;
+use Tpadzik\Sheetflow\Tests\Fixtures\CheckedProductImport;
+use Tpadzik\Sheetflow\Tests\Fixtures\ChoicePriceImport;
+use Tpadzik\Sheetflow\Tests\Fixtures\ColumnLimitImport;
 use Tpadzik\Sheetflow\Tests\Fixtures\CustomProductImport;
+use Tpadzik\Sheetflow\Tests\Fixtures\NullablePriceImport;
 use Tpadzik\Sheetflow\Tests\Fixtures\Product;
 use Tpadzik\Sheetflow\Tests\Fixtures\ProductImport;
+use Tpadzik\Sheetflow\Tests\Fixtures\RequiredNullImport;
+use Tpadzik\Sheetflow\Tests\Fixtures\StopPriceImport;
+use Tpadzik\Sheetflow\Tests\Fixtures\SumByIdImport;
 use Tpadzik\Sheetflow\Tests\Fixtures\TemplatesDisabledImport;
 use Tpadzik\Sheetflow\Tests\Fixtures\TemplatesEnabledImport;
+use Tpadzik\Sheetflow\Tests\Fixtures\UniqueNullablePriceImport;
+use Tpadzik\Sheetflow\Tests\Fixtures\UniqueProductImport;
 use Tpadzik\Sheetflow\Tests\Fixtures\User;
 use Tpadzik\Sheetflow\Tests\TestCase;
 
@@ -424,6 +433,238 @@ class ImportFlowTest extends TestCase
 
         $this->assertCount(1, $second['templates']);
         $this->assertSame('Shop', $second['templates'][0]['name']);
+    }
+
+    #[Test]
+    public function test_rejects_rows_the_definition_hook_marks_invalid(): void
+    {
+        Sheetflow::definition(key: 'products', definition: CheckedProductImport::class);
+        Product::query()->create([
+            'sku' => 'B-2',
+            'name' => 'Stored',
+            'price' => 1,
+        ]);
+
+        $run = $this->uploadCsv("ID,name,price\nA-1,Widget,1\nA-1,Other,2\nB-2,Fresh,3\nC-3,Ok,4\n");
+
+        $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
+            ->assertOk()
+            ->json();
+
+        $this->assertIsArray($validated);
+        $this->assertSame(1, $validated['valid_rows']);
+        $this->assertSame(3, $validated['failed_rows']);
+
+        $failures = $this->getJson(route('sheetflow.runs.failures', ['run' => $run['id']]))
+            ->assertOk()
+            ->json('data');
+
+        $this->assertIsArray($failures);
+        $messages = [];
+
+        foreach ($failures as $failure) {
+            $this->assertIsArray($failure);
+            $messages[$failure['row_number']] = $failure['errors']['sku'][0] ?? null;
+        }
+
+        $this->assertSame('This ID is repeated in the file.', $messages[2]);
+        $this->assertSame('This ID is repeated in the file.', $messages[3]);
+        $this->assertSame('This ID already exists.', $messages[4]);
+
+        $imported = $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))
+            ->assertOk()
+            ->json();
+
+        $this->assertIsArray($imported);
+        $this->assertSame(1, $imported['imported_rows']);
+        $this->assertTrue(Product::query()->where('sku', 'C-3')->exists());
+        $this->assertSame('Stored', Product::query()->where('sku', 'B-2')->first()->name);
+    }
+
+    #[Test]
+    public function test_rejects_every_row_that_repeats_a_value_marked_unique_in_the_file(): void
+    {
+        Sheetflow::definition(key: 'products', definition: UniqueProductImport::class);
+
+        $run = $this->uploadCsv("ID,name,price\nA-1,One,1\nA-1,Two,2\nB-2,Three,3\n");
+
+        $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
+            ->assertOk()
+            ->json();
+
+        $this->assertIsArray($validated);
+        $this->assertSame(1, $validated['valid_rows']);
+        $this->assertSame(2, $validated['failed_rows']);
+
+        $failures = $this->getJson(route('sheetflow.runs.failures', ['run' => $run['id']]))
+            ->assertOk()
+            ->json('data');
+
+        $this->assertIsArray($failures);
+        $this->assertSame('The value in ID is repeated in the file.', $failures[0]['errors']['sku'][0]);
+        $this->assertSame('The value in ID is repeated in the file.', $failures[1]['errors']['sku'][0]);
+
+        $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
+
+        $this->assertTrue(Product::query()->where('sku', 'B-2')->exists());
+        $this->assertFalse(Product::query()->where('sku', 'A-1')->exists());
+    }
+
+    #[Test]
+    public function test_rejects_a_repeated_value_when_that_field_would_otherwise_be_emptied(): void
+    {
+        Sheetflow::definition(key: 'products', definition: UniqueNullablePriceImport::class);
+
+        $run = $this->uploadCsv("ID,name,price\nA-1,One,nope\nA-2,Two,nope\nB-3,Three,4\n");
+
+        $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
+            ->assertOk()
+            ->json();
+
+        $this->assertIsArray($validated);
+        $this->assertSame(1, $validated['valid_rows']);
+        $this->assertSame(2, $validated['failed_rows']);
+
+        $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
+
+        $this->assertSame(1, Product::query()->count());
+        $this->assertEquals(4, Product::query()->where('sku', 'B-3')->first()->price);
+    }
+
+    #[Test]
+    public function test_stores_an_empty_value_when_the_field_allows_null_on_error(): void
+    {
+        Sheetflow::definition(key: 'products', definition: NullablePriceImport::class);
+
+        $run = $this->uploadCsv("ID,name,price\nA-1,Widget,nope\n");
+
+        $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))->assertOk();
+        $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
+
+        $product = Product::query()->where('sku', 'A-1')->first();
+
+        $this->assertNotNull($product);
+        $this->assertNull($product->price);
+    }
+
+    #[Test]
+    public function test_keeps_rejecting_a_required_field_when_null_on_error_is_declared(): void
+    {
+        Sheetflow::definition(key: 'products', definition: RequiredNullImport::class);
+
+        $run = $this->uploadCsv("ID,name,price\n,Widget,1\nB-2,Other,2\n");
+        $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
+            ->assertOk()
+            ->json();
+
+        $this->assertIsArray($validated);
+        $this->assertSame(1, $validated['failed_rows']);
+        $this->assertSame(['skip_row'], $validated['fields'][0]['allowed_invalid_actions']);
+
+        $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
+
+        $this->assertFalse(Product::query()->where('name', 'Widget')->exists());
+        $this->assertTrue(Product::query()->where('sku', 'B-2')->exists());
+    }
+
+    #[Test]
+    public function test_uses_the_error_action_chosen_for_the_column(): void
+    {
+        Sheetflow::definition(key: 'products', definition: ChoicePriceImport::class);
+
+        $run = $this->uploadCsv("ID,name,price\nA-1,Widget,nope\n");
+
+        $this->assertSame(['skip_row', 'null'], $run['fields'][2]['allowed_invalid_actions']);
+
+        $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]), [
+            'column_map' => $run['column_map'],
+            'invalid_actions' => ['price' => 'stop'],
+        ])->assertUnprocessable();
+
+        $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]), [
+            'column_map' => $run['column_map'],
+            'invalid_actions' => ['price' => 'null'],
+        ])->assertOk()->json();
+
+        $this->assertIsArray($validated);
+        $this->assertSame(1, $validated['valid_rows']);
+        $this->assertSame('null', $validated['invalid_actions']['price']);
+
+        $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
+
+        $this->assertNull(Product::query()->where('sku', 'A-1')->first()->price);
+    }
+
+    #[Test]
+    public function test_imports_nothing_when_a_field_error_stops_the_import(): void
+    {
+        Sheetflow::definition(key: 'products', definition: StopPriceImport::class);
+
+        $run = $this->uploadCsv("ID,name,price\nA-1,Widget,nope\nB-2,Other,3\n");
+
+        $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
+            ->assertOk()
+            ->json();
+
+        $this->assertIsArray($validated);
+        $this->assertSame(2, $validated['stopped_row']);
+        $this->assertSame(1, $validated['valid_rows']);
+
+        $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertUnprocessable();
+
+        $this->assertSame(0, Product::query()->count());
+    }
+
+    #[Test]
+    public function test_rejects_rows_when_the_file_check_finds_a_group_over_the_limit(): void
+    {
+        SumByIdImport::$fileChecks = 0;
+        Sheetflow::definition(key: 'products', definition: SumByIdImport::class);
+
+        $run = $this->uploadCsv("ID,name,price\nA-1,One,150\nA-1,Two,60\nB-2,Three,50\n");
+
+        $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
+            ->assertOk()
+            ->json();
+
+        $this->assertIsArray($validated);
+        $this->assertSame(1, SumByIdImport::$fileChecks);
+        $this->assertSame(1, $validated['valid_rows']);
+        $this->assertSame(2, $validated['failed_rows']);
+
+        $failures = $this->getJson(route('sheetflow.runs.failures', ['run' => $run['id']]))
+            ->assertOk()
+            ->json('data');
+
+        $this->assertIsArray($failures);
+        $this->assertSame('The sum for this ID is over 200.', $failures[0]['errors']['price'][0]);
+        $this->assertSame('The sum for this ID is over 200.', $failures[1]['errors']['price'][0]);
+
+        $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
+
+        $this->assertSame(1, Product::query()->count());
+        $this->assertEquals(50, Product::query()->where('sku', 'B-2')->first()->price);
+    }
+
+    #[Test]
+    public function test_rejects_a_row_from_a_column_value_in_the_file_check(): void
+    {
+        Sheetflow::definition(key: 'products', definition: ColumnLimitImport::class);
+
+        $run = $this->uploadCsv("ID,name,price\nA-1,One,150\nB-2,Two,40\n");
+
+        $validated = $this->postJson(route('sheetflow.runs.validate', ['run' => $run['id']]))
+            ->assertOk()
+            ->json();
+
+        $this->assertIsArray($validated);
+        $this->assertSame(1, $validated['valid_rows']);
+        $this->assertSame(1, $validated['failed_rows']);
+
+        $this->postJson(route('sheetflow.runs.import', ['run' => $run['id']]))->assertOk();
+
+        $this->assertFalse(Product::query()->where('sku', 'A-1')->exists());
+        $this->assertTrue(Product::query()->where('sku', 'B-2')->exists());
     }
 
     /**

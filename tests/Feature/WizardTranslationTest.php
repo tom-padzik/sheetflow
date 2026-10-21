@@ -34,7 +34,9 @@ class WizardTranslationTest extends TestCase
             ->assertJsonPath('statuses.staged', 'Gotowy')
             ->assertJsonPath('errors.file_not_stored', 'Nie udało się zapisać pliku.')
             ->assertJsonPath('validated_ready', 'Sprawdzanie zakończone. Wszystkie wiersze są poprawne (:valid). Możesz je zaimportować.')
-            ->assertJsonPath('imported_ready', 'Import zakończony. Wszystkie wiersze zostały zaimportowane (:imported).');
+            ->assertJsonPath('imported_ready', 'Import zakończony. Wszystkie wiersze zostały zaimportowane (:imported).')
+            ->assertJsonPath('invalid_actions.skip_row', 'Pomiń wiersz')
+            ->assertJsonPath('import_stopped', 'Import przerwany na wierszu :row. Żaden wiersz nie został zaimportowany.');
     }
 
     #[Test]

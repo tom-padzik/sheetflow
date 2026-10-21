@@ -35,6 +35,28 @@ abstract class ImportDefinition
         return null;
     }
 
+    /**
+     * Extra checks for one mapped row. Keys are field names and values are messages.
+     * Field rules still run. An empty array accepts the row.
+     *
+     * @return array<string, list<string>>
+     */
+    public function validateRow(MappedRow $row): array
+    {
+        return [];
+    }
+
+    /**
+     * Checks across the whole file. Keys are row numbers, then field names, then messages.
+     * An empty array accepts every row. Runs once before the per-row rules.
+     *
+     * @return array<int, array<string, list<string>>>
+     */
+    public function validateFile(MappedFile $file): array
+    {
+        return [];
+    }
+
     final public function handle(MappedRow $row): void
     {
         $this->beforePersist($row);

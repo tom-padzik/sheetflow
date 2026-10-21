@@ -18,6 +18,7 @@ class MappingTemplate extends Model
         'name',
         'header_signature',
         'column_map',
+        'invalid_actions',
         'user_id',
     ];
 
@@ -28,6 +29,7 @@ class MappingTemplate extends Model
     {
         return [
             'column_map' => 'array',
+            'invalid_actions' => 'array',
         ];
     }
 }

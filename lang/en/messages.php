@@ -21,6 +21,13 @@ return [
     'skip' => 'Skip',
     'field' => 'Field',
     'file_column' => 'File column',
+    'on_error' => 'On error',
+    'import_stopped' => 'Import stopped at row :row. No rows were imported.',
+    'invalid_actions' => [
+        'skip_row' => 'Skip row',
+        'null' => 'Set empty',
+        'stop' => 'Stop import',
+    ],
     'template_name' => 'Template name',
     'save_mapping' => 'Save mapping',
     'actions_heading' => '4. Validate and import',
@@ -58,5 +65,7 @@ return [
         'unsupported_format' => 'The format [:format] is not supported.',
         'unreadable' => 'The spreadsheet could not be read.',
         'unreadable_file' => 'The file ":filename" could not be read: :reason.',
+        'duplicate_in_file' => 'The value in :field is repeated in the file.',
+        'invalid_action' => 'That error action is not allowed for this field.',
     ],
 ];
