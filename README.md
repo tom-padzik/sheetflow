@@ -4,7 +4,7 @@ Sheetflow imports CSV, XLS, XLSX, and ODS files into Laravel models. The user up
 
 CSV, XLSX, and ODS are read with [OpenSpout](https://github.com/openspout/openspout), so those workbooks are streamed instead of loaded into memory. Legacy binary `.xls` is read with PhpSpreadsheet, which loads the whole workbook. A valid row is upserted with Eloquent. Replace `persist()` when the write needs to do something else.
 
-![Import wizard after a product CSV has been validated. The preview lists five products, the columns are mapped, and all five rows are valid.](docs/import-wizard.jpg)
+![Import wizard](docs/import-wizard.jpg)
 
 ## Requirements
 
